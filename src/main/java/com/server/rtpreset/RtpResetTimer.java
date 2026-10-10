@@ -1,6 +1,7 @@
 package com.server.rtpreset;
 
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.WorldBorder;
 import org.bukkit.command.Command;
@@ -13,19 +14,29 @@ import org.jetbrains.annotations.NotNull;
 
 public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
 
-    private static final String WORLD_NAME = "rtpdesert";
-    private static final int RESET_INTERVAL_SECONDS = 1800; // 30 phút
+    private static final String RTP_WORLD_NAME = "rtpdesert";
+    private static final String LOBBY_WORLD_NAME = "world";
+
+    // LOBBY SPAWN COORDINATES (157.500, 115.000, -5.500)
+    private static final double SPAWN_X = 157.5;
+    private static final double SPAWN_Y = 115.0;
+    private static final double SPAWN_Z = -5.5; // NOTE: -5.500 (CHANGE TO -5500.0 ONLY IF YOUR PLATFORM IS AT -5500)
+    private static final float SPAWN_YAW = 90.0f;
+    private static final float SPAWN_PITCH = 0.0f;
+
+    // WORLDBORDER CONFIGURATION
     private static final double BORDER_CENTER_X = 420.0;
     private static final double BORDER_CENTER_Z = -455.0;
     private static final double BORDER_SIZE = 838.0;
 
+    private static final int RESET_INTERVAL_SECONDS = 1800; // 30 MINUTES
     private int remainingSeconds = RESET_INTERVAL_SECONDS;
 
     @Override
     public void onEnable() {
         if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
             new RtpExpansion(this).register();
-            getLogger().info("Da dang ky thanh cong placeholder %rtp_timer%!");
+            getLogger().info("PLACEHOLDER %rtp_timer% REGISTERED SUCCESSFULLY!");
         }
 
         if (getCommand("rtpreset") != null) {
@@ -33,7 +44,7 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         }
 
         startTimerLoop();
-        getLogger().info("RtpResetTimer da duoc kich hoat!");
+        getLogger().info("RTPRESETTIMER ENABLED SUCCESSFULLY!");
     }
 
     public int getRemainingSeconds() {
@@ -48,40 +59,40 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
 
                 switch (remainingSeconds) {
                     case 1200:
-                        Bukkit.broadcastMessage("§e[Hệ Thống] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §e20 phút§f!");
+                        Bukkit.broadcastMessage("§6§l[RTP] §eRTPDESERT WILL RESET IN 20 MINUTES!");
                         break;
                     case 900:
-                        Bukkit.broadcastMessage("§e[Hệ Thống] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §e15 phút§f!");
+                        Bukkit.broadcastMessage("§6§l[RTP] §eRTPDESERT WILL RESET IN 15 MINUTES!");
                         break;
                     case 600:
-                        Bukkit.broadcastMessage("§e[Hệ Thống] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §e10 phút§f!");
+                        Bukkit.broadcastMessage("§6§l[RTP] §eRTPDESERT WILL RESET IN 10 MINUTES!");
                         break;
                     case 300:
-                        Bukkit.broadcastMessage("§e[Hệ Thống] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §e5 phút§f!");
+                        Bukkit.broadcastMessage("§e§l[RTP] §eRTPDESERT WILL RESET IN 5 MINUTES!");
                         break;
                     case 180:
-                        Bukkit.broadcastMessage("§e[Hệ Thống] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §e3 phút§f!");
+                        Bukkit.broadcastMessage("§e§l[RTP] §eRTPDESERT WILL RESET IN 3 MINUTES!");
                         break;
                     case 60:
-                        Bukkit.broadcastMessage("§e[Hệ Thống] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §e1 phút§f!");
+                        Bukkit.broadcastMessage("§c§l[RTP] §cRTPDESERT WILL RESET IN 1 MINUTE!");
                         break;
                     case 30:
-                        Bukkit.broadcastMessage("§e[Hệ Thống] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §630 giây§f!");
+                        Bukkit.broadcastMessage("§c§l[RTP] §cRTPDESERT WILL RESET IN 30 SECONDS!");
                         break;
                     case 5:
-                        Bukkit.broadcastMessage("§c[Cảnh Báo] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §c5 giây§f!");
+                        Bukkit.broadcastMessage("§c§l[RTP] §cRTPDESERT WILL RESET IN 5 SECONDS!");
                         break;
                     case 4:
-                        Bukkit.broadcastMessage("§c[Cảnh Báo] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §c4 giây§f!");
+                        Bukkit.broadcastMessage("§c§l[RTP] §cRTPDESERT WILL RESET IN 4 SECONDS!");
                         break;
                     case 3:
-                        Bukkit.broadcastMessage("§c[Cảnh Báo] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §c3 giây§f!");
+                        Bukkit.broadcastMessage("§c§l[RTP] §cRTPDESERT WILL RESET IN 3 SECONDS!");
                         break;
                     case 2:
-                        Bukkit.broadcastMessage("§c[Cảnh Báo] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §c2 giây§f!");
+                        Bukkit.broadcastMessage("§c§l[RTP] §cRTPDESERT WILL RESET IN 2 SECONDS!");
                         break;
                     case 1:
-                        Bukkit.broadcastMessage("§c[Cảnh Báo] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §41 giây§f! Đang đưa về Spawn...");
+                        Bukkit.broadcastMessage("§4§l[RTP] §cRTPDESERT WILL RESET IN 1 SECOND! TELEPORTING PLAYERS TO LOBBY...");
                         break;
                 }
 
@@ -94,34 +105,41 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
     }
 
     public void performWorldReset() {
-        Bukkit.broadcastMessage("§c[Reset] §fĐang tiến hành làm mới thế giới §a" + WORLD_NAME + "§f...");
+        Bukkit.broadcastMessage("§4§l[RESET] §cRESETTING RTPDESERT MAP...");
 
-        // 1. Dịch chuyển người chơi ra khỏi rtpdesert về spawn
-        World rtpWorld = Bukkit.getWorld(WORLD_NAME);
-        if (rtpWorld != null) {
-            for (Player player : rtpWorld.getPlayers()) {
-                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "spawn " + player.getName());
-                player.sendMessage("§cBạn đã được đưa về Spawn vì khu vực đang reset!");
+        // 1. SAFELY TELEPORT PLAYERS ONLY FROM RTPDESERT TO THE EXACT LOBBY COORDINATES
+        World lobbyWorld = Bukkit.getWorld(LOBBY_WORLD_NAME);
+        if (lobbyWorld != null) {
+            Location lobbyLocation = new Location(lobbyWorld, SPAWN_X, SPAWN_Y, SPAWN_Z, SPAWN_YAW, SPAWN_PITCH);
+            World rtpWorld = Bukkit.getWorld(RTP_WORLD_NAME);
+
+            if (rtpWorld != null) {
+                for (Player player : rtpWorld.getPlayers()) {
+                    player.teleport(lobbyLocation);
+                    player.sendMessage("§C§LYOU WERE TELEPORTED TO LOBBY BECAUSE RTPDESERT IS RESETTING!");
+                }
             }
+        } else {
+            getLogger().severe("LOBBY WORLD '" + LOBBY_WORLD_NAME + "' NOT FOUND! SKIPPING TELEPORTATION.");
         }
 
-        // 2. Unload thế giới
-        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "swm unload " + WORLD_NAME);
+        // 2. UNLOAD RTPDESERT FROM RAM
+        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "swm unload " + RTP_WORLD_NAME);
 
-        // 3. Đợi 3 giây (60 ticks) để giải phóng RAM rồi nạp lại
+        // 3. WAIT 3 SECONDS (60 TICKS) FOR MEMORY RELEASE, THEN LOAD THE WORLD
         Bukkit.getScheduler().runTaskLater(this, () -> {
-            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "swm load " + WORLD_NAME);
+            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "swm load " + RTP_WORLD_NAME);
 
-            // 4. Đợi 2 giây (40 ticks) để thế giới nạp hoàn chỉnh rồi gắn WorldBorder
+            // 4. WAIT 2 SECONDS (40 TICKS) FOR CHUNKS TO INITIALIZE, THEN APPLY WORLDBORDER
             Bukkit.getScheduler().runTaskLater(this, () -> {
-                World loadedWorld = Bukkit.getWorld(WORLD_NAME);
+                World loadedWorld = Bukkit.getWorld(RTP_WORLD_NAME);
                 if (loadedWorld != null) {
                     WorldBorder border = loadedWorld.getWorldBorder();
                     border.setCenter(BORDER_CENTER_X, BORDER_CENTER_Z);
                     border.setSize(BORDER_SIZE);
-                    Bukkit.broadcastMessage("§a[Hệ Thống] §fThế giới §a" + WORLD_NAME + " §fđã được làm mới hoàn tất! Reset tiếp theo sau §e30 phút§f.");
+                    Bukkit.broadcastMessage("§A§L[RTP] §aRTPDESERT HAS BEEN SUCCESSFULLY RESET!");
                 } else {
-                    getLogger().warning("Khong tim thay world " + WORLD_NAME + " sau khi load!");
+                    getLogger().severe("FAILED TO FIND WORLD " + RTP_WORLD_NAME + " AFTER LOADING!");
                 }
             }, 40L);
         }, 60L);
@@ -130,11 +148,11 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
         if (!sender.hasPermission("rtpreset.admin")) {
-            sender.sendMessage("§cBạn không có quyền thực hiện lệnh này!");
+            sender.sendMessage("§C§LYOU DO NOT HAVE PERMISSION TO USE THIS COMMAND!");
             return true;
         }
 
-        sender.sendMessage("§eĐang cưỡng chế reset thế giới " + WORLD_NAME + "...");
+        sender.sendMessage("§E§LMANUALLY RESETTING WORLD " + RTP_WORLD_NAME.toUpperCase() + "...");
         remainingSeconds = RESET_INTERVAL_SECONDS;
         performWorldReset();
         return true;
