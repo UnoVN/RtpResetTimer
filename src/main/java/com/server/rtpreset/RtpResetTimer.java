@@ -13,8 +13,12 @@ import org.jetbrains.annotations.NotNull;
 
 public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
 
-    private static final String WORLD_NAME = "rtpdesert"; // Đúng 1 chữ 's'
+    private static final String WORLD_NAME = "rtpdesert";
     private static final int RESET_INTERVAL_SECONDS = 1800; // 30 phút
+    private static final double BORDER_CENTER_X = 420.0;
+    private static final double BORDER_CENTER_Z = -455.0;
+    private static final double BORDER_SIZE = 838.0;
+
     private int remainingSeconds = RESET_INTERVAL_SECONDS;
 
     @Override
@@ -42,13 +46,46 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
             public void run() {
                 remainingSeconds--;
 
-                if (remainingSeconds == 300) {
-                    Bukkit.broadcastMessage("§e[Hệ Thống] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §e5 phút§f!");
-                } else if (remainingSeconds == 60) {
-                    Bukkit.broadcastMessage("§e[Hệ Thống] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §e1 phút§f!");
-                } else if (remainingSeconds == 10) {
-                    Bukkit.broadcastMessage("§c[Cảnh Báo] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §c10 giây§f! Đang đưa về Spawn...");
-                } else if (remainingSeconds <= 0) {
+                switch (remainingSeconds) {
+                    case 1200:
+                        Bukkit.broadcastMessage("§e[Hệ Thống] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §e20 phút§f!");
+                        break;
+                    case 900:
+                        Bukkit.broadcastMessage("§e[Hệ Thống] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §e15 phút§f!");
+                        break;
+                    case 600:
+                        Bukkit.broadcastMessage("§e[Hệ Thống] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §e10 phút§f!");
+                        break;
+                    case 300:
+                        Bukkit.broadcastMessage("§e[Hệ Thống] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §e5 phút§f!");
+                        break;
+                    case 180:
+                        Bukkit.broadcastMessage("§e[Hệ Thống] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §e3 phút§f!");
+                        break;
+                    case 60:
+                        Bukkit.broadcastMessage("§e[Hệ Thống] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §e1 phút§f!");
+                        break;
+                    case 30:
+                        Bukkit.broadcastMessage("§e[Hệ Thống] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §630 giây§f!");
+                        break;
+                    case 5:
+                        Bukkit.broadcastMessage("§c[Cảnh Báo] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §c5 giây§f!");
+                        break;
+                    case 4:
+                        Bukkit.broadcastMessage("§c[Cảnh Báo] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §c4 giây§f!");
+                        break;
+                    case 3:
+                        Bukkit.broadcastMessage("§c[Cảnh Báo] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §c3 giây§f!");
+                        break;
+                    case 2:
+                        Bukkit.broadcastMessage("§c[Cảnh Báo] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §c2 giây§f!");
+                        break;
+                    case 1:
+                        Bukkit.broadcastMessage("§c[Cảnh Báo] §fKhu vực §a" + WORLD_NAME + " §fsẽ reset sau §41 giây§f! Đang đưa về Spawn...");
+                        break;
+                }
+
+                if (remainingSeconds <= 0) {
                     remainingSeconds = RESET_INTERVAL_SECONDS;
                     performWorldReset();
                 }
@@ -71,7 +108,7 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         // 2. Unload thế giới
         Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "swm unload " + WORLD_NAME);
 
-        // 3. Đợi 3 giây (60 ticks) để giải phóng RAM rồi nạp lại (không có tham số 'file')
+        // 3. Đợi 3 giây (60 ticks) để giải phóng RAM rồi nạp lại
         Bukkit.getScheduler().runTaskLater(this, () -> {
             Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "swm load " + WORLD_NAME);
 
@@ -80,9 +117,9 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
                 World loadedWorld = Bukkit.getWorld(WORLD_NAME);
                 if (loadedWorld != null) {
                     WorldBorder border = loadedWorld.getWorldBorder();
-                    border.setCenter(420.0, -455.0);
-                    border.setSize(841.0);
-                    Bukkit.broadcastMessage("§a[Hệ Thống] §fThế giới §a" + WORLD_NAME + " §fđã được làm mới hoàn tất!");
+                    border.setCenter(BORDER_CENTER_X, BORDER_CENTER_Z);
+                    border.setSize(BORDER_SIZE);
+                    Bukkit.broadcastMessage("§a[Hệ Thống] §fThế giới §a" + WORLD_NAME + " §fđã được làm mới hoàn tất! Reset tiếp theo sau §e30 phút§f.");
                 } else {
                     getLogger().warning("Khong tim thay world " + WORLD_NAME + " sau khi load!");
                 }
