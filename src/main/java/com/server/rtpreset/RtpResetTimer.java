@@ -28,7 +28,7 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
     private static final float SPAWN_YAW = 90.0f;
     private static final float SPAWN_PITCH = 0.0f;
 
-    // THIẾT LẬP WORLDBORDER (838)
+    // WORLDBORDER (838)
     private static final double BORDER_CENTER_X = 420.0;
     private static final double BORDER_CENTER_Z = -455.0;
     private static final double BORDER_SIZE = 838.0;
@@ -36,7 +36,6 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
     private static final int RESET_INTERVAL_SECONDS = 1800; // 30 PHÚT
     private int remainingSeconds = RESET_INTERVAL_SECONDS;
 
-    // XỬ LÝ MÃ HEX VÀ TRIỆT TIÊU TOÀN BỘ DẤU CHẤM PHẨY DƯ THỪA
     private static final Pattern HEX_PATTERN = Pattern.compile("&#([A-Fa-f0-9]{6});?");
 
     @Override
@@ -81,40 +80,40 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
 
                 switch (remainingSeconds) {
                     case 1200:
-                        broadcast("<glyph:warning_blue> &#89dceb Reset map RTP Desert in &#b4befe 20m");
+                        broadcast("<glyph:warning_blue> &#89dcebReset map RTP Desert in &#b4befe20m");
                         break;
                     case 900:
-                        broadcast("<glyph:warning_blue> &#89dceb Reset map RTP Desert in &#b4befe 15m");
+                        broadcast("<glyph:warning_blue> &#89dcebReset map RTP Desert in &#b4befe15m");
                         break;
                     case 600:
-                        broadcast("<glyph:warning_blue> &#89dceb Reset map RTP Desert in &#b4befe 10m");
+                        broadcast("<glyph:warning_blue> &#89dcebReset map RTP Desert in &#b4befe10m");
                         break;
                     case 300:
-                        broadcast("<glyph:warning_blue> &#89dceb Reset map RTP Desert in &#b4befe 5m");
+                        broadcast("<glyph:warning_blue> &#89dcebReset map RTP Desert in &#b4befe5m");
                         break;
                     case 180:
-                        broadcast("<glyph:warning_blue> &#89dceb Reset map RTP Desert in &#b4befe 3m");
+                        broadcast("<glyph:warning_blue> &#89dcebReset map RTP Desert in &#b4befe3m");
                         break;
                     case 60:
-                        broadcast("<glyph:warning_blue> &#89dceb Reset map RTP Desert in &#fab387 1m");
+                        broadcast("<glyph:warning_blue> &#89dcebReset map RTP Desert in &#fab3871m");
                         break;
                     case 30:
-                        broadcast("<glyph:warning_blue> &#89dceb Reset map RTP Desert in &#fab387 30s");
+                        broadcast("<glyph:warning_blue> &#89dcebReset map RTP Desert in &#fab38730s");
                         break;
                     case 5:
-                        broadcast("<glyph:warning_blue> &#f38ba8 Reset map RTP Desert in 5s");
+                        broadcast("<glyph:warning_blue> &#f38ba8Reset map RTP Desert in 5s");
                         break;
                     case 4:
-                        broadcast("<glyph:warning_blue> &#f38ba8 Reset map RTP Desert in 4s");
+                        broadcast("<glyph:warning_blue> &#f38ba8Reset map RTP Desert in 4s");
                         break;
                     case 3:
-                        broadcast("<glyph:warning_blue> &#f38ba8 Reset map RTP Desert in 3s");
+                        broadcast("<glyph:warning_blue> &#f38ba8Reset map RTP Desert in 3s");
                         break;
                     case 2:
-                        broadcast("<glyph:warning_blue> &#f38ba8 Reset map RTP Desert in 2s");
+                        broadcast("<glyph:warning_blue> &#f38ba8Reset map RTP Desert in 2s");
                         break;
                     case 1:
-                        broadcast("<glyph:warning_blue> &#f38ba8 Reset map RTP Desert in 1s");
+                        broadcast("<glyph:warning_blue> &#f38ba8Reset map RTP Desert in 1s");
                         break;
                 }
 
@@ -127,7 +126,7 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
     }
 
     public void performWorldReset() {
-        broadcast("<glyph:warning_blue> &#cba6f7 Resetting RTP Desert map...");
+        broadcast("<glyph:warning_blue> &#cba6f7Resetting RTP Desert map...");
 
         // 1. DỊCH CHUYỂN NGƯỜI CHƠI VỀ LOBBY AN TOÀN
         World lobbyWorld = Bukkit.getWorld(LOBBY_WORLD_NAME);
@@ -138,7 +137,7 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
             if (rtpWorld != null) {
                 for (Player player : rtpWorld.getPlayers()) {
                     player.teleport(lobbyLocation);
-                    player.sendMessage(color("<glyph:warning_blue> &#89b4fa You were teleported to lobby because &#b4befe RTP Desert &#89b4fa is resetting!"));
+                    player.sendMessage(color("<glyph:warning_blue> &#89b4faYou were teleported to lobby because &#b4befeRTP Desert &#89b4fais resetting!"));
                 }
             }
         } else {
@@ -160,8 +159,8 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
                     border.setCenter(BORDER_CENTER_X, BORDER_CENTER_Z);
                     border.setSize(BORDER_SIZE);
 
-                    broadcast("<glyph:warning_blue> &#a6e3a1 RTP Desert has been successfully reset!");
-                    broadcast("<glyph:warning_blue> &#89dceb Reset map RTP Desert in &#b4befe 30m");
+                    broadcast("<glyph:warning_blue> &#a6e3a1RTP Desert has been successfully reset!");
+                    broadcast("<glyph:warning_blue> &#89dcebReset map RTP Desert in &#b4befe30m");
                 } else {
                     getLogger().severe("Khong the tim thay world " + RTP_WORLD_NAME + " sau khi load!");
                 }
@@ -172,11 +171,11 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
         if (!sender.hasPermission("rtpreset.admin")) {
-            sender.sendMessage(color("<glyph:warning_blue> &#f38ba8 You do not have permission to use this command!"));
+            sender.sendMessage(color("<glyph:warning_blue> &#f38ba8You do not have permission to use this command!"));
             return true;
         }
 
-        sender.sendMessage(color("<glyph:warning_blue> &#fab387 Manually resetting RTP Desert..."));
+        sender.sendMessage(color("<glyph:warning_blue> &#fab387Manually resetting RTP Desert..."));
         remainingSeconds = RESET_INTERVAL_SECONDS;
         performWorldReset();
         return true;
