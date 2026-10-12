@@ -151,13 +151,18 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         Bukkit.getScheduler().runTaskLater(this, () -> {
             Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "swm load " + RTP_WORLD_NAME);
 
-            // 4. ĐỢI 2 GIÂY (40 TICKS) ĐỂ CHUNK HOÀN THIỆN RỒI THIẾT LẬP WORLDBORDER
+            // 4. ĐỢI 2 GIÂY (40 TICKS) ĐỂ CHUNK HOÀN THIỆN RỒI THIẾT LẬP BORDER VÀ GAMERULE
             Bukkit.getScheduler().runTaskLater(this, () -> {
                 World loadedWorld = Bukkit.getWorld(RTP_WORLD_NAME);
                 if (loadedWorld != null) {
+                    // Thiết lập WorldBorder
                     WorldBorder border = loadedWorld.getWorldBorder();
                     border.setCenter(BORDER_CENTER_X, BORDER_CENTER_Z);
                     border.setSize(BORDER_SIZE);
+
+                    // Tự động chỉnh giờ ban ngày và tắt locator_bar
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "execute in " + RTP_WORLD_NAME + " run time set day");
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "execute in " + RTP_WORLD_NAME + " run gamerule locator_bar false");
 
                     broadcast("<glyph:warning_blue> &#a6e3a1RTP Desert has been successfully reset!");
                     broadcast("<glyph:warning_blue> &#89dcebReset map RTP Desert in &#b4befe30m");
