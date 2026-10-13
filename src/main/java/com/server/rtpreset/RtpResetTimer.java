@@ -8,38 +8,79 @@ import org.bukkit.WorldBorder;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.scheduler.BukkitTask;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
 
-    private static final String RTP_WORLD_NAME = "rtpdesert";
-    private static final String LOBBY_WORLD_NAME = "world";
+    public static class WorldProfile {
+        public String key;
+        public String targetWorld;
+        public String displayName;
+        public int resetIntervalSeconds;
+        public int remainingSeconds;
 
-    // TỌA ĐỘ SẢNH LOBBY (157.5, 115.0, -5.5)
-    private static final double SPAWN_X = 157.5;
-    private static final double SPAWN_Y = 115.0;
-    private static final double SPAWN_Z = -5.5;
-    private static final float SPAWN_YAW = 90.0f;
-    private static final float SPAWN_PITCH = 0.0f;
+        public double borderCenterX;
+        public double borderCenterZ;
+        public double borderSize;
+        public List<String> postResetCommands;
+        public boolean isResetting = false;
 
-    // WORLDBORDER (838)
-    private static final double BORDER_CENTER_X = 420.0;
-    private static final double BORDER_CENTER_Z = -455.0;
-    private static final double BORDER_SIZE = 838.0;
+        public WorldProfile(String key, String targetWorld, String displayName, int resetIntervalSeconds,
+                            double borderCenterX, double borderCenterZ, double borderSize, List<String> postResetCommands) {
+            this.key = key;
+            this.targetWorld = targetWorld;
+            this.displayName = displayName;
+            this.resetIntervalSeconds = resetIntervalSeconds;
+            this.remainingSeconds = resetIntervalSeconds;
+            this.borderCenterX = borderCenterX;
+            this.borderCenterZ = borderCenterZ;
+            this.borderSize = borderSize;
+            this.postResetCommands = postResetCommands != null ? postResetCommands : Collections.emptyList();
+        }
+    }
 
-    private static final int RESET_INTERVAL_SECONDS = 1800; // 30 PHÚT
-    private int remainingSeconds = RESET_INTERVAL_SECONDS;
+    private final Map<String, WorldProfile> worldProfiles = new LinkedHashMap<>();
+    private String defaultWorldKey = null;
 
+    // Tọa độ Lobby
+    private String lobbyWorldName;
+    private double spawnX, spawnY, spawnZ;
+    private float spawnYaw, spawnPitch;
+
+    // Cấu hình tin nhắn
+    private String prefix;
+    private String msgCountdownNormal;
+    private String msgCountdownWarning;
+    private String msgCountdownUrgent;
+    private String msgResetting;
+    private String msgPlayerTeleported;
+    private String msgResetSuccess;
+    private String msgNextReset;
+
+    private String msgAdminNoPermission;
+    private String msgAdminReloadSuccess;
+    private String msgAdminManualResetSingle;
+    private String msgAdminManualResetAll;
+    private String msgAdminWorldNotFound;
+    private String msgAdminNoWorlds;
+
+    private BukkitTask mainTimerTask;
     private static final Pattern HEX_PATTERN = Pattern.compile("&#([A-Fa-f0-9]{6});?");
 
     @Override
     public void onEnable() {
+        saveDefaultConfig();
+        loadConfiguration();
+
         if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
             new RtpExpansion(this).register();
             getLogger().info("Placeholder %rtp_timer% da duoc dang ky thanh cong!");
@@ -50,11 +91,85 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         }
 
         startTimerLoop();
-        getLogger().info("RtpResetTimer da duoc khoi dong!");
+        getLogger().info("RtpResetTimer Catppuccin Edition da khoi dong!");
     }
 
-    public int getRemainingSeconds() {
-        return remainingSeconds;
+    @Override
+    public void onDisable() {
+        if (mainTimerTask != null) {
+            mainTimerTask.cancel();
+        }
+    }
+
+    public void loadConfiguration() {
+        reloadConfig();
+        worldProfiles.clear();
+        defaultWorldKey = null;
+
+        // Đọc sảnh
+        this.lobbyWorldName = getConfig().getString("lobby-spawn.world", "world");
+        this.spawnX = getConfig().getDouble("lobby-spawn.x", 157.5);
+        this.spawnY = getConfig().getDouble("lobby-spawn.y", 115.0);
+        this.spawnZ = getConfig().getDouble("lobby-spawn.z", -5.5);
+        this.spawnYaw = (float) getConfig().getDouble("lobby-spawn.yaw", 90.0);
+        this.spawnPitch = (float) getConfig().getDouble("lobby-spawn.pitch", 0.0);
+
+        // Đọc định dạng tin nhắn Catppuccin
+        this.prefix = getConfig().getString("messages.prefix", "<glyph:warning_blue> ");
+        this.msgCountdownNormal = getConfig().getString("messages.countdown-normal", "{prefix}&#89dcebReset map {display_name} in &#b4befe{time}");
+        this.msgCountdownWarning = getConfig().getString("messages.countdown-warning", "{prefix}&#89dcebReset map {display_name} in &#fab387{time}");
+        this.msgCountdownUrgent = getConfig().getString("messages.countdown-urgent", "{prefix}&#f38ba8Reset map {display_name} in {time}");
+
+        this.msgResetting = getConfig().getString("messages.resetting", "{prefix}&#cba6f7Resetting {display_name} map...");
+        this.msgPlayerTeleported = getConfig().getString("messages.player-teleported", "{prefix}&#89b4faYou were teleported to lobby because &#b4befe{display_name} &#89b4fais resetting!");
+        this.msgResetSuccess = getConfig().getString("messages.reset-success", "{prefix}&#a6e3a1{display_name} has been successfully reset!");
+        this.msgNextReset = getConfig().getString("messages.next-reset", "{prefix}&#89dcebReset map {display_name} in &#b4befe{time}");
+
+        this.msgAdminNoPermission = getConfig().getString("messages.admin.no-permission", "{prefix}&#f38ba8You do not have permission to use this command!");
+        this.msgAdminReloadSuccess = getConfig().getString("messages.admin.reload-success", "{prefix}&#a6e3a1Reloaded config! Loaded &#89dceb{count} &#a6e3a1worlds.");
+        this.msgAdminManualResetSingle = getConfig().getString("messages.admin.manual-reset-single", "{prefix}&#fab387Manually resetting {display_name}...");
+        this.msgAdminManualResetAll = getConfig().getString("messages.admin.manual-reset-all", "{prefix}&#fab387Manually resetting all configured worlds...");
+        this.msgAdminWorldNotFound = getConfig().getString("messages.admin.world-not-found", "{prefix}&#f38ba8World not found! Available: &#89dceb{available}");
+        this.msgAdminNoWorlds = getConfig().getString("messages.admin.no-worlds", "{prefix}&#f38ba8No worlds configured in config.yml!");
+
+        // Đọc danh sách thế giới
+        ConfigurationSection section = getConfig().getConfigurationSection("worlds");
+        if (section != null) {
+            for (String key : section.getKeys(false)) {
+                String target = section.getString(key + ".target-world", key);
+                String display = section.getString(key + ".display-name", key);
+                int interval = section.getInt(key + ".reset-interval-seconds", 1800);
+
+                double bX = section.getDouble(key + ".worldborder.center-x", 0.0);
+                double bZ = section.getDouble(key + ".worldborder.center-z", 0.0);
+                double bSize = section.getDouble(key + ".worldborder.size", 1000.0);
+
+                List<String> cmds = section.getStringList(key + ".post-reset-commands");
+
+                WorldProfile profile = new WorldProfile(key, target, display, interval, bX, bZ, bSize, cmds);
+                worldProfiles.put(key.toLowerCase(), profile);
+
+                if (defaultWorldKey == null) {
+                    defaultWorldKey = key.toLowerCase();
+                }
+            }
+        }
+    }
+
+    public int getDefaultRemainingSeconds() {
+        if (defaultWorldKey == null || !worldProfiles.containsKey(defaultWorldKey)) return -1;
+        return worldProfiles.get(defaultWorldKey).remainingSeconds;
+    }
+
+    public int getRemainingSeconds(String key) {
+        WorldProfile profile = worldProfiles.get(key.toLowerCase());
+        if (profile == null) {
+            for (WorldProfile p : worldProfiles.values()) {
+                if (p.targetWorld.equalsIgnoreCase(key)) return p.remainingSeconds;
+            }
+            return -1;
+        }
+        return profile.remainingSeconds;
     }
 
     public String color(String message) {
@@ -68,107 +183,124 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         return ChatColor.translateAlternateColorCodes('&', buffer.toString());
     }
 
-    private void broadcast(String message) {
-        Bukkit.broadcastMessage(color(message));
+    private String formatMessage(String template, WorldProfile profile, String timeStr) {
+        String res = template.replace("{prefix}", prefix);
+        if (profile != null) {
+            res = res.replace("{display_name}", profile.displayName)
+                     .replace("{world}", profile.targetWorld);
+        }
+        if (timeStr != null) {
+            res = res.replace("{time}", timeStr);
+        }
+        return color(res);
+    }
+
+    private void broadcast(String formattedMessage) {
+        Bukkit.broadcastMessage(formattedMessage);
+    }
+
+    private String formatDuration(int totalSeconds) {
+        if (totalSeconds >= 60 && totalSeconds % 60 == 0) {
+            return (totalSeconds / 60) + "m";
+        } else if (totalSeconds >= 60) {
+            return (totalSeconds / 60) + "m " + (totalSeconds % 60) + "s";
+        }
+        return totalSeconds + "s";
     }
 
     private void startTimerLoop() {
-        new BukkitRunnable() {
+        if (mainTimerTask != null) {
+            mainTimerTask.cancel();
+        }
+
+        mainTimerTask = new BukkitRunnable() {
             @Override
             public void run() {
-                remainingSeconds--;
+                for (WorldProfile profile : worldProfiles.values()) {
+                    if (profile.isResetting) continue;
 
-                switch (remainingSeconds) {
-                    case 1200:
-                        broadcast("<glyph:warning_blue> &#89dcebReset map RTP Desert in &#b4befe20m");
-                        break;
-                    case 900:
-                        broadcast("<glyph:warning_blue> &#89dcebReset map RTP Desert in &#b4befe15m");
-                        break;
-                    case 600:
-                        broadcast("<glyph:warning_blue> &#89dcebReset map RTP Desert in &#b4befe10m");
-                        break;
-                    case 300:
-                        broadcast("<glyph:warning_blue> &#89dcebReset map RTP Desert in &#b4befe5m");
-                        break;
-                    case 180:
-                        broadcast("<glyph:warning_blue> &#89dcebReset map RTP Desert in &#b4befe3m");
-                        break;
-                    case 60:
-                        broadcast("<glyph:warning_blue> &#89dcebReset map RTP Desert in &#fab3871m");
-                        break;
-                    case 30:
-                        broadcast("<glyph:warning_blue> &#89dcebReset map RTP Desert in &#fab38730s");
-                        break;
-                    case 5:
-                        broadcast("<glyph:warning_blue> &#f38ba8Reset map RTP Desert in 5s");
-                        break;
-                    case 4:
-                        broadcast("<glyph:warning_blue> &#f38ba8Reset map RTP Desert in 4s");
-                        break;
-                    case 3:
-                        broadcast("<glyph:warning_blue> &#f38ba8Reset map RTP Desert in 3s");
-                        break;
-                    case 2:
-                        broadcast("<glyph:warning_blue> &#f38ba8Reset map RTP Desert in 2s");
-                        break;
-                    case 1:
-                        broadcast("<glyph:warning_blue> &#f38ba8Reset map RTP Desert in 1s");
-                        break;
-                }
+                    profile.remainingSeconds--;
 
-                if (remainingSeconds <= 0) {
-                    remainingSeconds = RESET_INTERVAL_SECONDS;
-                    performWorldReset();
+                    switch (profile.remainingSeconds) {
+                        case 1200:
+                        case 900:
+                        case 600:
+                        case 300:
+                        case 180:
+                            broadcast(formatMessage(msgCountdownNormal, profile, formatDuration(profile.remainingSeconds)));
+                            break;
+                        case 60:
+                        case 30:
+                            broadcast(formatMessage(msgCountdownWarning, profile, formatDuration(profile.remainingSeconds)));
+                            break;
+                        case 5:
+                        case 4:
+                        case 3:
+                        case 2:
+                        case 1:
+                            broadcast(formatMessage(msgCountdownUrgent, profile, profile.remainingSeconds + "s"));
+                            break;
+                    }
+
+                    if (profile.remainingSeconds <= 0) {
+                        profile.remainingSeconds = profile.resetIntervalSeconds;
+                        performWorldReset(profile);
+                    }
                 }
             }
         }.runTaskTimer(this, 20L, 20L);
     }
 
-    public void performWorldReset() {
-        broadcast("<glyph:warning_blue> &#cba6f7Resetting RTP Desert map...");
+    public void performWorldReset(WorldProfile profile) {
+        profile.isResetting = true;
+        broadcast(formatMessage(msgResetting, profile, null));
 
-        // 1. DỊCH CHUYỂN NGƯỜI CHƠI VỀ LOBBY AN TOÀN
-        World lobbyWorld = Bukkit.getWorld(LOBBY_WORLD_NAME);
+        // 1. Đưa người chơi trong thế giới mục tiêu về Lobby an toàn
+        World lobbyWorld = Bukkit.getWorld(lobbyWorldName);
         if (lobbyWorld != null) {
-            Location lobbyLocation = new Location(lobbyWorld, SPAWN_X, SPAWN_Y, SPAWN_Z, SPAWN_YAW, SPAWN_PITCH);
-            World rtpWorld = Bukkit.getWorld(RTP_WORLD_NAME);
+            Location lobbyLocation = new Location(lobbyWorld, spawnX, spawnY, spawnZ, spawnYaw, spawnPitch);
+            World targetWorldObj = Bukkit.getWorld(profile.targetWorld);
 
-            if (rtpWorld != null) {
-                for (Player player : rtpWorld.getPlayers()) {
+            if (targetWorldObj != null) {
+                for (Player player : targetWorldObj.getPlayers()) {
                     player.teleport(lobbyLocation);
-                    player.sendMessage(color("<glyph:warning_blue> &#89b4faYou were teleported to lobby because &#b4befeRTP Desert &#89b4fais resetting!"));
+                    player.sendMessage(formatMessage(msgPlayerTeleported, profile, null));
                 }
             }
         } else {
-            getLogger().severe("Khong tim thay world sanh: " + LOBBY_WORLD_NAME);
+            getLogger().severe("Khong tim thay world lobby: " + lobbyWorldName);
         }
 
-        // 2. UNLOAD KHỎI BỘ NHỚ RAM
-        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "swm unload " + RTP_WORLD_NAME);
+        // 2. Unload khỏi RAM bằng SWM
+        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "swm unload " + profile.targetWorld);
 
-        // 3. ĐỢI 3 GIÂY (60 TICKS) ĐỂ GIẢI PHÓNG RAM RỒI NẠP LẠI
+        // 3. Đợi 3 giây để giải phóng RAM rồi nạp lại world
         Bukkit.getScheduler().runTaskLater(this, () -> {
-            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "swm load " + RTP_WORLD_NAME);
+            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "swm load " + profile.targetWorld);
 
-            // 4. ĐỢI 2 GIÂY (40 TICKS) ĐỂ CHUNK HOÀN THIỆN RỒI THIẾT LẬP BORDER VÀ GAMERULE
+            // 4. Đợi 2 giây để chunk nạp xong rồi cấu hình Border & Gamerule
             Bukkit.getScheduler().runTaskLater(this, () -> {
-                World loadedWorld = Bukkit.getWorld(RTP_WORLD_NAME);
+                World loadedWorld = Bukkit.getWorld(profile.targetWorld);
                 if (loadedWorld != null) {
-                    // Thiết lập WorldBorder
                     WorldBorder border = loadedWorld.getWorldBorder();
-                    border.setCenter(BORDER_CENTER_X, BORDER_CENTER_Z);
-                    border.setSize(BORDER_SIZE);
+                    border.setCenter(profile.borderCenterX, profile.borderCenterZ);
+                    border.setSize(profile.borderSize);
 
-                    // Tự động chỉnh giờ ban ngày và tắt locator_bar
-                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "execute in " + RTP_WORLD_NAME + " run time set day");
-                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "execute in " + RTP_WORLD_NAME + " run gamerule locator_bar false");
+                    loadedWorld.setTime(1000L);
 
-                    broadcast("<glyph:warning_blue> &#a6e3a1RTP Desert has been successfully reset!");
-                    broadcast("<glyph:warning_blue> &#89dcebReset map RTP Desert in &#b4befe30m");
+                    for (String cmd : profile.postResetCommands) {
+                        String trimmed = cmd.trim();
+                        if (trimmed.startsWith("time set")) continue;
+                        String finalCmd = trimmed.startsWith("execute in ") ? trimmed : "execute in " + profile.targetWorld + " run " + trimmed;
+                        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalCmd);
+                    }
+
+                    broadcast(formatMessage(msgResetSuccess, profile, null));
+                    broadcast(formatMessage(msgNextReset, profile, formatDuration(profile.resetIntervalSeconds)));
                 } else {
-                    getLogger().severe("Khong the tim thay world " + RTP_WORLD_NAME + " sau khi load!");
+                    getLogger().severe("Khong tim thay world " + profile.targetWorld + " sau khi load!");
                 }
+                profile.isResetting = false;
             }, 40L);
         }, 60L);
     }
@@ -176,13 +308,70 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
         if (!sender.hasPermission("rtpreset.admin")) {
-            sender.sendMessage(color("<glyph:warning_blue> &#f38ba8You do not have permission to use this command!"));
+            sender.sendMessage(color(msgAdminNoPermission.replace("{prefix}", prefix)));
             return true;
         }
 
-        sender.sendMessage(color("<glyph:warning_blue> &#fab387Manually resetting RTP Desert..."));
-        remainingSeconds = RESET_INTERVAL_SECONDS;
-        performWorldReset();
+        // Lệnh: /rtpreset reload
+        if (args.length > 0 && args[0].equalsIgnoreCase("reload")) {
+            loadConfiguration();
+            startTimerLoop();
+            String reloadMsg = msgAdminReloadSuccess.replace("{prefix}", prefix)
+                                                   .replace("{count}", String.valueOf(worldProfiles.size()));
+            sender.sendMessage(color(reloadMsg));
+            return true;
+        }
+
+        // Lệnh: /rtpreset all
+        if (args.length > 0 && args[0].equalsIgnoreCase("all")) {
+            sender.sendMessage(color(msgAdminManualResetAll.replace("{prefix}", prefix)));
+            for (WorldProfile p : worldProfiles.values()) {
+                p.remainingSeconds = p.resetIntervalSeconds;
+                performWorldReset(p);
+            }
+            return true;
+        }
+
+        // Lệnh: /rtpreset <world_key>
+        if (args.length > 0) {
+            String key = args[0].toLowerCase();
+            WorldProfile profile = worldProfiles.get(key);
+            if (profile == null) {
+                for (WorldProfile p : worldProfiles.values()) {
+                    if (p.targetWorld.equalsIgnoreCase(key)) {
+                        profile = p;
+                        break;
+                    }
+                }
+            }
+
+            if (profile != null) {
+                String manualMsg = msgAdminManualResetSingle.replace("{prefix}", prefix)
+                                                            .replace("{display_name}", profile.displayName)
+                                                            .replace("{world}", profile.targetWorld);
+                sender.sendMessage(color(manualMsg));
+                profile.remainingSeconds = profile.resetIntervalSeconds;
+                performWorldReset(profile);
+            } else {
+                String notFoundMsg = msgAdminWorldNotFound.replace("{prefix}", prefix)
+                                                          .replace("{available}", String.join(", ", worldProfiles.keySet()));
+                sender.sendMessage(color(notFoundMsg));
+            }
+            return true;
+        }
+
+        // Lệnh: /rtpreset (Không tham số -> reset thế giới mặc định)
+        if (defaultWorldKey != null) {
+            WorldProfile defProfile = worldProfiles.get(defaultWorldKey);
+            String manualMsg = msgAdminManualResetSingle.replace("{prefix}", prefix)
+                                                        .replace("{display_name}", defProfile.displayName)
+                                                        .replace("{world}", defProfile.targetWorld);
+            sender.sendMessage(color(manualMsg));
+            defProfile.remainingSeconds = defProfile.resetIntervalSeconds;
+            performWorldReset(defProfile);
+        } else {
+            sender.sendMessage(color(msgAdminNoWorlds.replace("{prefix}", prefix)));
+        }
         return true;
     }
 }
