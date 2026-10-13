@@ -51,12 +51,10 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
     private final Map<String, WorldProfile> worldProfiles = new LinkedHashMap<>();
     private String defaultWorldKey = null;
 
-    // Tọa độ Lobby
     private String lobbyWorldName;
     private double spawnX, spawnY, spawnZ;
     private float spawnYaw, spawnPitch;
 
-    // Cấu hình tin nhắn
     private String prefix;
     private String msgCountdownNormal;
     private String msgCountdownWarning;
@@ -106,7 +104,6 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         worldProfiles.clear();
         defaultWorldKey = null;
 
-        // Đọc sảnh
         this.lobbyWorldName = getConfig().getString("lobby-spawn.world", "world");
         this.spawnX = getConfig().getDouble("lobby-spawn.x", 157.5);
         this.spawnY = getConfig().getDouble("lobby-spawn.y", 115.0);
@@ -114,7 +111,6 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         this.spawnYaw = (float) getConfig().getDouble("lobby-spawn.yaw", 90.0);
         this.spawnPitch = (float) getConfig().getDouble("lobby-spawn.pitch", 0.0);
 
-        // Đọc định dạng tin nhắn Catppuccin
         this.prefix = getConfig().getString("messages.prefix", "<glyph:warning_blue> ");
         this.msgCountdownNormal = getConfig().getString("messages.countdown-normal", "{prefix}&#89dcebReset map {display_name} in &#b4befe{time}");
         this.msgCountdownWarning = getConfig().getString("messages.countdown-warning", "{prefix}&#89dcebReset map {display_name} in &#fab387{time}");
@@ -132,7 +128,6 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         this.msgAdminWorldNotFound = getConfig().getString("messages.admin.world-not-found", "{prefix}&#f38ba8World not found! Available: &#89dceb{available}");
         this.msgAdminNoWorlds = getConfig().getString("messages.admin.no-worlds", "{prefix}&#f38ba8No worlds configured in config.yml!");
 
-        // Đọc danh sách thế giới
         ConfigurationSection section = getConfig().getConfigurationSection("worlds");
         if (section != null) {
             for (String key : section.getKeys(false)) {
@@ -156,11 +151,17 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         }
     }
 
+    // Phuong thuc lay gio mac dinh (Khong tham so - sua loi compile)
+    public int getRemainingSeconds() {
+        return getDefaultRemainingSeconds();
+    }
+
     public int getDefaultRemainingSeconds() {
         if (defaultWorldKey == null || !worldProfiles.containsKey(defaultWorldKey)) return -1;
         return worldProfiles.get(defaultWorldKey).remainingSeconds;
     }
 
+    // Phuong thuc lay gio theo ten world
     public int getRemainingSeconds(String key) {
         WorldProfile profile = worldProfiles.get(key.toLowerCase());
         if (profile == null) {
@@ -255,7 +256,6 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         profile.isResetting = true;
         broadcast(formatMessage(msgResetting, profile, null));
 
-        // 1. Đưa người chơi trong thế giới mục tiêu về Lobby an toàn
         World lobbyWorld = Bukkit.getWorld(lobbyWorldName);
         if (lobbyWorld != null) {
             Location lobbyLocation = new Location(lobbyWorld, spawnX, spawnY, spawnZ, spawnYaw, spawnPitch);
@@ -271,14 +271,11 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
             getLogger().severe("Khong tim thay world lobby: " + lobbyWorldName);
         }
 
-        // 2. Unload khỏi RAM bằng SWM
         Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "swm unload " + profile.targetWorld);
 
-        // 3. Đợi 3 giây để giải phóng RAM rồi nạp lại world
         Bukkit.getScheduler().runTaskLater(this, () -> {
             Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "swm load " + profile.targetWorld);
 
-            // 4. Đợi 2 giây để chunk nạp xong rồi cấu hình Border & Gamerule
             Bukkit.getScheduler().runTaskLater(this, () -> {
                 World loadedWorld = Bukkit.getWorld(profile.targetWorld);
                 if (loadedWorld != null) {
@@ -312,7 +309,6 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
             return true;
         }
 
-        // Lệnh: /rtpreset reload
         if (args.length > 0 && args[0].equalsIgnoreCase("reload")) {
             loadConfiguration();
             startTimerLoop();
@@ -322,7 +318,6 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
             return true;
         }
 
-        // Lệnh: /rtpreset all
         if (args.length > 0 && args[0].equalsIgnoreCase("all")) {
             sender.sendMessage(color(msgAdminManualResetAll.replace("{prefix}", prefix)));
             for (WorldProfile p : worldProfiles.values()) {
@@ -332,7 +327,6 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
             return true;
         }
 
-        // Lệnh: /rtpreset <world_key>
         if (args.length > 0) {
             String key = args[0].toLowerCase();
             WorldProfile profile = worldProfiles.get(key);
@@ -360,7 +354,6 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
             return true;
         }
 
-        // Lệnh: /rtpreset (Không tham số -> reset thế giới mặc định)
         if (defaultWorldKey != null) {
             WorldProfile defProfile = worldProfiles.get(defaultWorldKey);
             String manualMsg = msgAdminManualResetSingle.replace("{prefix}", prefix)
