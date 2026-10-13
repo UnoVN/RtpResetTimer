@@ -134,7 +134,7 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         this.msgNextReset = getConfig().getString("messages.next-reset", "{prefix}&#89dcebReset map {display_name} in &#b4befe{time}");
 
         this.msgAdminNoPermission = getConfig().getString("messages.admin.no-permission", "{prefix}&#f38ba8You do not have permission to use this command!");
-        this.msgAdminReloadSuccess = getConfig().getString("messages.admin.reload-success", "{prefix}&#a6e3a1Reloaded config! Loaded &#89dceb{count} &#a6e3a1worlds.");
+        this.msgAdminReloadSuccess = getConfig().getString("messages.admin.reload-success", "{prefix}&#a6e3a1Configuration reloaded! Loaded &#89dceb{count} &#a6e3a1worlds.");
         this.msgAdminManualResetSingle = getConfig().getString("messages.admin.manual-reset-single", "{prefix}&#fab387Manually resetting {display_name}...");
         this.msgAdminManualResetAll = getConfig().getString("messages.admin.manual-reset-all", "{prefix}&#fab387Manually resetting all configured worlds...");
         this.msgAdminWorldNotFound = getConfig().getString("messages.admin.world-not-found", "{prefix}&#f38ba8World not found! Available: &#89dceb{available}");
@@ -332,6 +332,10 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
                 sender.sendMessage("This command is only for players!");
                 return true;
             }
+            if (args.length > 0 && args[0].equalsIgnoreCase("leave")) {
+                rtpManager.leaveQueueCommand(player);
+                return true;
+            }
             rtpManager.openRtpQueueGui(player);
             return true;
         }
@@ -399,4 +403,4 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         }
         return true;
     }
-            }
+}
