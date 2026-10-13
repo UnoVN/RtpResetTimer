@@ -19,6 +19,7 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+@SuppressWarnings("deprecation")
 public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
 
     public static class WorldProfile {
