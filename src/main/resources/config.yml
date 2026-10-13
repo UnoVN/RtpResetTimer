@@ -1,0 +1,83 @@
+# ==============================================================================
+#             RTP RESET TIMER - BẢNG CẤU HÌNH NÂNG CAO (CATPPUCCIN MOCHA)
+# ==============================================================================
+# Bảng mã màu Catppuccin Mocha tiện tra cứu:
+#   Rosewater: &#f5e0dc   Mauve:   &#cba6f7   Peach:  &#fab387   Sapphire: &#74c7ec
+#   Flamingo:  &#f2cdcd   Red:     &#f38ba8   Yellow: &#f9e2af   Blue:     &#89b4fa
+#   Pink:      &#f5c2e7   Maroon:  &#eba0ac   Green:  &#a6e3a1   Lavender: &#b4befe
+#   Teal:      &#94e2d5   Sky:     &#89dceb   Text:   &#cdd6f4   Subtext:  &#a6adc8
+# ==============================================================================
+
+# Tọa độ sảnh để đưa người chơi về khi map bắt đầu reset
+lobby-spawn:
+  world: "world"
+  x: 157.5
+  y: 115.0
+  z: -5.5
+  yaw: 90.0
+  pitch: 0.0
+
+# Hệ thống tin nhắn mặc định toàn server
+messages:
+  # Icon glyph kèm 1 dấu cách chuẩn
+  prefix: "<glyph:warning_blue> "
+
+  # 1. Các mốc đếm ngược (biến có sẵn: {prefix}, {display_name}, {time})
+  # - Mốc bình thường (>= 3 phút): Dùng Sky (&#89dceb) + Lavender (&#b4befe)
+  countdown-normal: "{prefix}&#89dcebReset map {display_name} in &#b4befe{time}"
+  
+  # - Mốc cảnh báo (60s, 30s): Dùng Sky (&#89dceb) + Peach (&#fab387)
+  countdown-warning: "{prefix}&#89dcebReset map {display_name} in &#fab387{time}"
+  
+  # - Mốc khẩn cấp (5s, 4s, 3s, 2s, 1s): Dùng Red (&#f38ba8)
+  countdown-urgent: "{prefix}&#f38ba8Reset map {display_name} in {time}"
+
+  # 2. Tiến trình Reset
+  # - Mauve (&#cba6f7) khi bắt đầu reset
+  resetting: "{prefix}&#cba6f7Resetting {display_name} map..."
+  
+  # - Blue (&#89b4fa) + Lavender (&#b4befe) gửi riêng cho người chơi bị dịch chuyển
+  player-teleported: "{prefix}&#89b4faYou were teleported to lobby because &#b4befe{display_name} &#89b4fais resetting!"
+  
+  # - Green (&#a6e3a1) khi hoàn tất
+  reset-success: "{prefix}&#a6e3a1{display_name} has been successfully reset!"
+  
+  # - Thông báo chu kỳ kế tiếp ngay sau reset
+  next-reset: "{prefix}&#89dcebReset map {display_name} in &#b4befe{time}"
+
+  # 3. Phản hồi lệnh Admin (/rtpreset)
+  admin:
+    no-permission: "{prefix}&#f38ba8You do not have permission to use this command!"
+    reload-success: "{prefix}&#a6e3a1Reloaded config! Loaded &#89dceb{count} &#a6e3a1worlds."
+    manual-reset-single: "{prefix}&#fab387Manually resetting {display_name}..."
+    manual-reset-all: "{prefix}&#fab387Manually resetting all configured worlds..."
+    world-not-found: "{prefix}&#f38ba8World not found! Available: &#89dceb{available}"
+    no-worlds: "{prefix}&#f38ba8No worlds configured in config.yml!"
+
+# Danh sách thế giới quản lý (Tùy biến độc lập từng world)
+worlds:
+  desert:
+    target-world: "rtpdesert"
+    display-name: "RTP Desert"
+    reset-interval-seconds: 1800 # 30 phút
+    worldborder:
+      center-x: 420.0
+      center-z: -455.0
+      size: 838.0
+    post-reset-commands:
+      - "time set day"
+      - "gamerule locator_bar false"
+      - "gamerule doDaylightCycle true"
+
+  plains:
+    target-world: "rtpplains"
+    display-name: "RTP Plains"
+    reset-interval-seconds: 1200 # 20 phút
+    worldborder:
+      center-x: 0.0
+      center-z: 0.0
+      size: 1000.0
+    post-reset-commands:
+      - "time set day"
+      - "gamerule locator_bar false"
+      - "gamerule doDaylightCycle true"
