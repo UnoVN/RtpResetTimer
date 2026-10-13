@@ -24,7 +24,7 @@ public class RtpExpansion extends PlaceholderExpansion {
 
     @Override
     public @NotNull String getVersion() {
-        return "1.1.0";
+        return "1.2.0";
     }
 
     @Override
@@ -34,7 +34,6 @@ public class RtpExpansion extends PlaceholderExpansion {
 
     @Override
     public String onRequest(OfflinePlayer player, @NotNull String params) {
-        // %rtp_timer% -> tra ve thoi gian cua world mac dinh
         if (params.equalsIgnoreCase("timer")) {
             int remaining = plugin.getRemainingSeconds();
             if (remaining < 0) return "00:00";
@@ -43,7 +42,6 @@ public class RtpExpansion extends PlaceholderExpansion {
             return String.format("%02d:%02d", minutes, seconds);
         }
 
-        // %rtp_timer_<key>% (vi du: %rtp_timer_desert%, %rtp_timer_plains%)
         if (params.toLowerCase().startsWith("timer_")) {
             String worldKey = params.substring(6);
             int remaining = plugin.getRemainingSeconds(worldKey);
