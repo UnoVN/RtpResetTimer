@@ -1,14 +1,11 @@
 # ==============================================================================
-#             RTP RESET TIMER - BẢNG CẤU HÌNH NÂNG CAO (CATPPUCCIN MOCHA)
+#             RTP RESET TIMER - CONFIGURATION (CATPPUCCIN MOCHA)
 # ==============================================================================
-# Bảng mã màu Catppuccin Mocha tiện tra cứu:
-#   Rosewater: &#f5e0dc   Mauve:   &#cba6f7   Peach:  &#fab387   Sapphire: &#74c7ec
-#   Flamingo:  &#f2cdcd   Red:     &#f38ba8   Yellow: &#f9e2af   Blue:     &#89b4fa
-#   Pink:      &#f5c2e7   Maroon:  &#eba0ac   Green:  &#a6e3a1   Lavender: &#b4befe
-#   Teal:      &#94e2d5   Sky:     &#89dceb   Text:   &#cdd6f4   Subtext:  &#a6adc8
+# Color Reference:
+#   Mauve:   &#cba6f7   Red:    &#f38ba8   Peach: &#fab387   Green: &#a6e3a1
+#   Sky:     &#89dceb   Blue:   &#89b4fa   Text:  &#cdd6f4   Subtext: &#a6adc8
 # ==============================================================================
 
-# Tọa độ sảnh để đưa người chơi về khi map bắt đầu reset
 lobby-spawn:
   world: "world"
   x: 157.5
@@ -17,49 +14,28 @@ lobby-spawn:
   yaw: 90.0
   pitch: 0.0
 
-# Hệ thống tin nhắn mặc định toàn server
 messages:
-  # Icon glyph kèm 1 dấu cách chuẩn
   prefix: "<glyph:warning_blue> "
-
-  # 1. Các mốc đếm ngược (biến có sẵn: {prefix}, {display_name}, {time})
-  # - Mốc bình thường (>= 3 phút): Dùng Sky (&#89dceb) + Lavender (&#b4befe)
   countdown-normal: "{prefix}&#89dcebReset map {display_name} in &#b4befe{time}"
-  
-  # - Mốc cảnh báo (60s, 30s): Dùng Sky (&#89dceb) + Peach (&#fab387)
   countdown-warning: "{prefix}&#89dcebReset map {display_name} in &#fab387{time}"
-  
-  # - Mốc khẩn cấp (5s, 4s, 3s, 2s, 1s): Dùng Red (&#f38ba8)
   countdown-urgent: "{prefix}&#f38ba8Reset map {display_name} in {time}"
-
-  # 2. Tiến trình Reset
-  # - Mauve (&#cba6f7) khi bắt đầu reset
   resetting: "{prefix}&#cba6f7Resetting {display_name} map..."
-  
-  # - Blue (&#89b4fa) + Lavender (&#b4befe) gửi riêng cho người chơi bị dịch chuyển
   player-teleported: "{prefix}&#89b4faYou were teleported to lobby because &#b4befe{display_name} &#89b4fais resetting!"
-  
-  # - Green (&#a6e3a1) khi hoàn tất
   reset-success: "{prefix}&#a6e3a1{display_name} has been successfully reset!"
-  
-  # - Thông báo chu kỳ kế tiếp ngay sau reset
   next-reset: "{prefix}&#89dcebReset map {display_name} in &#b4befe{time}"
-
-  # 3. Phản hồi lệnh Admin (/rtpreset)
   admin:
     no-permission: "{prefix}&#f38ba8You do not have permission to use this command!"
-    reload-success: "{prefix}&#a6e3a1Reloaded config! Loaded &#89dceb{count} &#a6e3a1worlds."
+    reload-success: "{prefix}&#a6e3a1Reloaded configuration! Loaded &#89dceb{count} &#a6e3a1worlds."
     manual-reset-single: "{prefix}&#fab387Manually resetting {display_name}..."
     manual-reset-all: "{prefix}&#fab387Manually resetting all configured worlds..."
     world-not-found: "{prefix}&#f38ba8World not found! Available: &#89dceb{available}"
     no-worlds: "{prefix}&#f38ba8No worlds configured in config.yml!"
 
-# Danh sách thế giới quản lý (Tùy biến độc lập từng world)
 worlds:
   desert:
     target-world: "rtpdesert"
     display-name: "RTP Desert"
-    reset-interval-seconds: 1800 # 30 phút
+    reset-interval-seconds: 1800
     worldborder:
       center-x: 420.0
       center-z: -455.0
@@ -69,15 +45,101 @@ worlds:
       - "gamerule locator_bar false"
       - "gamerule doDaylightCycle true"
 
-  plains:
-    target-world: "rtpplains"
-    display-name: "RTP Plains"
-    reset-interval-seconds: 1200 # 20 phút
-    worldborder:
-      center-x: 0.0
-      center-z: 0.0
-      size: 1000.0
-    post-reset-commands:
-      - "time set day"
-      - "gamerule locator_bar false"
-      - "gamerule doDaylightCycle true"
+# ==============================================================================
+#                       RTP MENU CONFIGURATION (/rtp)
+# ==============================================================================
+rtp-menu:
+  title: "&#89b4fa&lRANDOM TELEPORT"
+  size: 27
+  items:
+    desert:
+      slot: 13
+      material: "SAND"
+      name: "&#89dceb&lRTP Desert"
+      lore:
+        - "&#a6adc8Free for all combat zone"
+        - "&#a6adc8Safe random teleportation"
+        - ""
+        - "&#a6e3a1» Click to teleport randomly"
+      world: "rtpdesert"
+      min-x: 2
+      max-x: 838
+      min-z: -873
+      max-z: -36
+
+# ==============================================================================
+#                 RTP QUEUE 1V1 MATCHMAKING MENU (/rtpq)
+# ==============================================================================
+rtpq-menu:
+  title: "&#fab387&l1V1 BATTLE QUEUE"
+  size: 27
+  countdown-seconds: 5
+  player-gap: 8
+  items:
+    ht_kit:
+      slot: 11
+      material: "CROSSBOW"
+      name: "&#fab387&lHT KIT (1v1)"
+      mode-display: "HT KIT"
+      lore:
+        - "&#a6adc8High Tier Kit matchmaking"
+        - "&#a6adc8Map: &#89dcebRTP Desert"
+        - "&#a6adc8Queue: &#fab387{current_queue}/2"
+        - ""
+        - "&#89dceb» Click to join or leave queue"
+      world: "rtpdesert"
+      min-x: 50
+      max-x: 790
+      min-z: -820
+      max-z: -80
+
+    lt_kit:
+      slot: 15
+      material: "BOW"
+      name: "&#89dceb&lLT KIT (1v1)"
+      mode-display: "LT KIT"
+      lore:
+        - "&#a6adc8Low Tier Kit matchmaking"
+        - "&#a6adc8Map: &#89dcebRTP Desert"
+        - "&#a6adc8Queue: &#89dceb{current_queue}/2"
+        - ""
+        - "&#89dceb» Click to join or leave queue"
+      world: "rtpdesert"
+      min-x: 50
+      max-x: 790
+      min-z: -820
+      max-z: -80
+
+# ==============================================================================
+#                 RTP & MATCHMAKING SAFETY ALGORITHM SETTINGS
+# ==============================================================================
+rtp-settings:
+  min-player-distance: 50.0
+  max-terrain-slope: 2
+  max-search-attempts: 60
+
+# ==============================================================================
+#                    MESSAGES FOR RTP & RTP QUEUE
+# ==============================================================================
+rtp-messages:
+  joined-queue: "{prefix}&#89dcebYou joined the queue for &#fab387{display_name} &#89dceb(&#a6e3a1{current}/2&#89dceb)!"
+  left-queue: "{prefix}&#f38ba8You left the queue for &#fab387{display_name}&#f38ba8."
+  already-in-other-queue: "{prefix}&#f38ba8You are already in another queue! Please leave it first."
+  queue-broadcast: "{prefix}&#89b4faPlayer &#cba6f7{player} &#89b4fais looking for a match in &#fab387{display_name}&#89b4fa! (&#a6e3a1{current}/2&#89b4fa)"
+  
+  match-found-broadcast:
+    - ""
+    - " &8» &#fab387&l1V1 MATCH FOUND"
+    - " &8» &#cba6f7{player1} &#f38ba8VS &#cba6f7{player2}"
+    - " &8» &#89dcebMode: &#b4befe{mode} &8| &#89dcebMap: &#b4befe{world}"
+    - ""
+
+  match-actionbar: "&#89b4faOpponent: {opponent_prefix}&#cdd6f4{opponent_name} &#89dceb| Starting in: &#fab387{time}s"
+  match-countdown-subtitle: "&#cdd6f4Prepare for battle..."
+  match-started-title: "&#a6e3a1&lFIGHT!"
+  match-started-subtitle: "&#cdd6f4Good luck!"
+
+  teleporting-rtp: "{prefix}&#89dcebFinding a safe location in &#fab387{display_name}&#89dceb..."
+  teleport-success: "{prefix}&#a6e3a1Teleported to &#89dcebX: {x}, Y: {y}, Z: {z}&#a6e3a1!"
+  safe-loc-not-found: "{prefix}&#f38ba8Could not find a safe location, please try again!"
+  
