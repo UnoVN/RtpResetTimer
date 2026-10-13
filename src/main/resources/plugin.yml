@@ -1,10 +1,18 @@
 name: RtpResetTimer
-version: '1.0.0'
+version: '1.2.0'
 main: com.server.rtpreset.RtpResetTimer
 api-version: '1.21'
 author: Nhan
 softdepend: [PlaceholderAPI]
 commands:
   rtpreset:
-    description: Cuong che reset the gioi rtpdessert ngay lap tuc
+    description: Reset or reload RtpResetTimer configuration
     permission: rtpreset.admin
+  rtp:
+    description: Open Random Teleport menu
+    permission: rtpreset.use
+  rtpq:
+    description: Open 1v1 Battle Queue menu
+    aliases: [rtpqueue]
+    permission: rtpreset.use
+    
