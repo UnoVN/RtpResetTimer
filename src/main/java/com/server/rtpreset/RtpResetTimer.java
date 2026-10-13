@@ -27,7 +27,6 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         public String displayName;
         public int resetIntervalSeconds;
         public int remainingSeconds;
-
         public double borderCenterX;
         public double borderCenterZ;
         public double borderSize;
@@ -72,6 +71,7 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
     private String msgAdminNoWorlds;
 
     private BukkitTask mainTimerTask;
+    private RtpManager rtpManager;
     private static final Pattern HEX_PATTERN = Pattern.compile("&#([A-Fa-f0-9]{6});?");
 
     @Override
@@ -79,17 +79,20 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         saveDefaultConfig();
         loadConfiguration();
 
+        this.rtpManager = new RtpManager(this);
+        getServer().getPluginManager().registerEvents(new RtpListener(this), this);
+
         if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
             new RtpExpansion(this).register();
-            getLogger().info("Placeholder %rtp_timer% da duoc dang ky thanh cong!");
+            getLogger().info("Placeholder %rtp_timer% registered successfully!");
         }
 
-        if (getCommand("rtpreset") != null) {
-            getCommand("rtpreset").setExecutor(this);
-        }
+        if (getCommand("rtpreset") != null) getCommand("rtpreset").setExecutor(this);
+        if (getCommand("rtp") != null) getCommand("rtp").setExecutor(this);
+        if (getCommand("rtpq") != null) getCommand("rtpq").setExecutor(this);
 
         startTimerLoop();
-        getLogger().info("RtpResetTimer Catppuccin Edition da khoi dong!");
+        getLogger().info("RtpResetTimer 1.2.0 enabled successfully!");
     }
 
     @Override
@@ -97,6 +100,15 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         if (mainTimerTask != null) {
             mainTimerTask.cancel();
         }
+    }
+
+    public RtpManager getRtpManager() {
+        return rtpManager;
+    }
+
+    public String getMsg(String path, String def) {
+        String s = getConfig().getString(path, def);
+        return s.replace("{prefix}", prefix);
     }
 
     public void loadConfiguration() {
@@ -149,9 +161,12 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
                 }
             }
         }
+
+        if (rtpManager != null) {
+            rtpManager.loadConfig();
+        }
     }
 
-    // Phuong thuc lay gio mac dinh (Khong tham so - sua loi compile)
     public int getRemainingSeconds() {
         return getDefaultRemainingSeconds();
     }
@@ -161,7 +176,6 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         return worldProfiles.get(defaultWorldKey).remainingSeconds;
     }
 
-    // Phuong thuc lay gio theo ten world
     public int getRemainingSeconds(String key) {
         WorldProfile profile = worldProfiles.get(key.toLowerCase());
         if (profile == null) {
@@ -268,7 +282,7 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
                 }
             }
         } else {
-            getLogger().severe("Khong tim thay world lobby: " + lobbyWorldName);
+            getLogger().severe("Lobby world not found: " + lobbyWorldName);
         }
 
         Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "swm unload " + profile.targetWorld);
@@ -295,7 +309,7 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
                     broadcast(formatMessage(msgResetSuccess, profile, null));
                     broadcast(formatMessage(msgNextReset, profile, formatDuration(profile.resetIntervalSeconds)));
                 } else {
-                    getLogger().severe("Khong tim thay world " + profile.targetWorld + " sau khi load!");
+                    getLogger().severe("World " + profile.targetWorld + " not found after loading!");
                 }
                 profile.isResetting = false;
             }, 40L);
@@ -304,6 +318,24 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
 
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
+        if (command.getName().equalsIgnoreCase("rtp")) {
+            if (!(sender instanceof Player player)) {
+                sender.sendMessage("This command is only for players!");
+                return true;
+            }
+            rtpManager.openRtpGui(player);
+            return true;
+        }
+
+        if (command.getName().equalsIgnoreCase("rtpq")) {
+            if (!(sender instanceof Player player)) {
+                sender.sendMessage("This command is only for players!");
+                return true;
+            }
+            rtpManager.openRtpQueueGui(player);
+            return true;
+        }
+
         if (!sender.hasPermission("rtpreset.admin")) {
             sender.sendMessage(color(msgAdminNoPermission.replace("{prefix}", prefix)));
             return true;
@@ -367,4 +399,4 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         }
         return true;
     }
-}
+            }
