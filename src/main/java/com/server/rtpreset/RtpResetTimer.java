@@ -168,8 +168,9 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
     public Component toComponent(String message) {
         if (message == null || message.isEmpty()) return Component.empty();
 
-        // Chuẩn hóa <sprite:minecraft:item/...> về <sprite:item/...>
-        String s = message.replaceAll("<sprite:minecraft:([^>]+)>", "<sprite:$1>");
+        // Tự động chuẩn hóa atlas 1.21.9+ cho item và block nếu viết thiếu tên atlas
+        String s = message.replaceAll("<sprite:(?:minecraft:)?item/([^>]+)>", "<sprite:items:item/$1>")
+                          .replaceAll("<sprite:(?:minecraft:)?block/([^>]+)>", "<sprite:blocks:block/$1>");
 
         // Chuyển &#RRGGBB sang <#RRGGBB>
         Matcher matcher = HEX_PATTERN.matcher(s);
@@ -180,7 +181,7 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         matcher.appendTail(sb);
         s = sb.toString();
 
-        // Chuyển mã & và § (từ LuckPerms prefix) sang MiniMessage tag
+        // Chuyển mã & và § sang MiniMessage tag
         s = convertLegacyCodes(s);
 
         return MiniMessage.miniMessage().deserialize(s);
