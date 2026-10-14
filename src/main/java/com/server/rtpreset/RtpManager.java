@@ -255,7 +255,6 @@ public class RtpManager {
         openRtpQueueGui(player, null);
     }
 
-    // MỞ MENU RTP QUEUE (KHÔNG CÓ PLAYER HEAD, CHỈ GỒM CHỌN MODE & NÚT CONFIRM/LEAVE)
     public void openRtpQueueGui(Player player, Set<String> customSelected) {
         Set<String> activeQueues = getPlayerQueuedModes(player.getUniqueId());
         Set<String> selected;
@@ -277,7 +276,6 @@ public class RtpManager {
         String stSel = plugin.getConfig().getString("rtpq-menu.status-selected", "&#a6e3a1✔ Selected");
         String stUnsel = plugin.getConfig().getString("rtpq-menu.status-unselected", "<glyph:left_click> &#a6adc8Click to select");
 
-        // 1. Các chế độ (Slot 11 & Slot 15)
         for (RtpItem item : rtpqItems.values()) {
             ItemStack is = new ItemStack(item.material);
             ItemMeta meta = is.getItemMeta();
@@ -303,7 +301,6 @@ public class RtpManager {
             if (item.slot >= 0 && item.slot < size) inv.setItem(item.slot, is);
         }
 
-        // 2. Nút Confirm Join Queue / Leave Queue (Slot 22)
         boolean showLeave = !activeQueues.isEmpty() && (selected.isEmpty() || selected.equals(activeQueues));
         String btnPath = showLeave ? "rtpq-menu.leave-button" : "rtpq-menu.confirm-button";
         int btnSlot = plugin.getConfig().getInt(btnPath + ".slot", 22);
@@ -714,7 +711,12 @@ public class RtpManager {
 
     private void teleportMatch(Player p1, Player p2, RtpItem item) {
         World world = Bukkit.getWorld(item.worldName);
-        if (world == null) return;
+        if (world == null || plugin.isWorldResetting(item.worldName)) {
+            Component msg = plugin.toComponent(plugin.getMsg("rtp-messages.world-resetting", "{prefix}&#f38ba8Map is currently resetting, please wait a moment!"));
+            p1.sendMessage(msg);
+            p2.sendMessage(msg);
+            return;
+        }
 
         int gap = plugin.getConfig().getInt("rtpq-menu.player-gap", 8);
         Set<UUID> ignored = new HashSet<>(Arrays.asList(p1.getUniqueId(), p2.getUniqueId()));
@@ -761,7 +763,10 @@ public class RtpManager {
 
     private void executeRtp(Player player, RtpItem item) {
         World world = Bukkit.getWorld(item.worldName);
-        if (world == null) return;
+        if (world == null || plugin.isWorldResetting(item.worldName)) {
+            player.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.world-resetting", "{prefix}&#f38ba8Map is currently resetting, please wait a moment!")));
+            return;
+        }
         player.sendMessage(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.teleporting-rtp", "&#a6adc8Teleporting..."), item)));
         Location loc = findSafeLocation(world, item.minX, item.maxX, item.minZ, item.maxZ, Collections.singleton(player.getUniqueId()));
         if (loc != null) {
@@ -837,5 +842,4 @@ public class RtpManager {
         }
         return "";
     }
-                }
-        
+}
