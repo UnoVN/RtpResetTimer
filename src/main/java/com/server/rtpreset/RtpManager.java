@@ -10,6 +10,7 @@ import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 
 import java.util.*;
@@ -20,7 +21,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public class RtpManager {
 
     public static class RtpItem {
-        public String key, name, modeDisplay, mapDisplay, worldName;
+        public String key, name, icon, modeDisplay, mapDisplay, worldName;
         public int slot, minX, maxX, minZ, maxZ;
         public Material material;
         public List<String> lore;
@@ -30,18 +31,29 @@ public class RtpManager {
     private final Map<String, RtpItem> rtpItems = new LinkedHashMap<>();
     private final Map<String, RtpItem> rtpqItems = new LinkedHashMap<>();
     private final Map<String, List<UUID>> queueMap = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> queueJoinTime = new ConcurrentHashMap<>();
     private final Set<UUID> inCountdown = ConcurrentHashMap.newKeySet();
+    private BukkitTask queueMonitorTask;
 
     public RtpManager(RtpResetTimer plugin) {
         this.plugin = plugin;
         loadConfig();
     }
 
+    public void shutdown() {
+        if (queueMonitorTask != null) {
+            queueMonitorTask.cancel();
+            queueMonitorTask = null;
+        }
+        queueMap.clear();
+        queueJoinTime.clear();
+        inCountdown.clear();
+    }
+
     public void loadConfig() {
+        shutdown();
         rtpItems.clear();
         rtpqItems.clear();
-        queueMap.clear();
-        inCountdown.clear();
 
         ConfigurationSection rtpSec = plugin.getConfig().getConfigurationSection("rtp-menu.items");
         if (rtpSec != null) {
@@ -61,6 +73,7 @@ public class RtpManager {
                 }
             }
         }
+        startQueueMonitor();
     }
 
     private RtpItem parseItem(ConfigurationSection sec, String key) {
@@ -69,6 +82,7 @@ public class RtpManager {
         item.slot = sec.getInt("slot", 0);
         Material mat = Material.matchMaterial(sec.getString("material", "STONE").toUpperCase());
         item.material = mat != null ? mat : Material.STONE;
+        item.icon = sec.getString("icon", "⚔");
         item.name = sec.getString("name", key);
         item.modeDisplay = sec.getString("mode-display", key.toUpperCase());
         item.mapDisplay = sec.getString("map-display", "RTP Desert");
@@ -79,6 +93,65 @@ public class RtpManager {
         item.minZ = sec.getInt("min-z", 0);
         item.maxZ = sec.getInt("max-z", 100);
         return item;
+    }
+
+    // VÒNG LẶP HIỂN THỊ TIME ELAPSED & KIỂM TRA TIMEOUT MỖI GIÂY
+    private void startQueueMonitor() {
+        queueMonitorTask = new BukkitRunnable() {
+            @Override
+            public void run() {
+                boolean timeoutEnabled = plugin.getConfig().getBoolean("rtpq-menu.queue-timeout.enabled", true);
+                int maxTimeoutSec = plugin.getConfig().getInt("rtpq-menu.queue-timeout.timeout-seconds", 120);
+                long now = System.currentTimeMillis();
+
+                for (Map.Entry<String, List<UUID>> entry : queueMap.entrySet()) {
+                    RtpItem item = rtpqItems.get(entry.getKey());
+                    if (item == null) continue;
+                    List<UUID> list = entry.getValue();
+
+                    Iterator<UUID> it = list.iterator();
+                    while (it.hasNext()) {
+                        UUID uuid = it.next();
+                        Player p = Bukkit.getPlayer(uuid);
+                        if (p == null || !p.isOnline()) {
+                            it.remove();
+                            queueJoinTime.remove(uuid);
+                            continue;
+                        }
+
+                        long joinedAt = queueJoinTime.getOrDefault(uuid, now);
+                        int elapsedSec = (int) ((now - joinedAt) / 1000L);
+
+                        if (timeoutEnabled && elapsedSec >= maxTimeoutSec) {
+                            it.remove();
+                            queueJoinTime.remove(uuid);
+                            String timeoutFmt = String.format("%02d:%02d", maxTimeoutSec / 60, maxTimeoutSec % 60);
+                            p.sendMessage(plugin.color(applyPlaceholders(plugin.getMsg("rtp-messages.queue-timeout",
+                                    "{prefix}{icon} &#f38ba8Queue timed out!"), item).replace("{timeout}", timeoutFmt)));
+                            sendActionbar(p, applyPlaceholders(plugin.getMsg("rtp-messages.queue-timeout-actionbar",
+                                    "&#f38ba8&lQUEUE TIMED OUT!"), item));
+                            p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 0.8f);
+                            continue;
+                        }
+
+                        String elapsedStr = String.format("%02d:%02d", elapsedSec / 60, elapsedSec % 60);
+                        String ab = applyPlaceholders(plugin.getMsg("rtp-messages.queue-waiting-actionbar",
+                                "{icon} &#89dcebQueue: &#fab387{mode} &8| &#89dcebTime: &#a6e3a1{elapsed}"), item)
+                                .replace("{elapsed}", elapsedStr);
+                        sendActionbar(p, ab);
+                    }
+                }
+            }
+        }.runTaskTimer(plugin, 20L, 20L);
+    }
+
+    private String applyPlaceholders(String text, RtpItem item) {
+        if (text == null || item == null) return "";
+        return text.replace("{icon}", item.icon)
+                   .replace("{display_name}", item.name)
+                   .replace("{mode}", item.modeDisplay)
+                   .replace("{map}", item.mapDisplay)
+                   .replace("{world}", item.worldName);
     }
 
     private void applyFiller(Inventory inv, String menuPath) {
@@ -103,9 +176,9 @@ public class RtpManager {
             ItemStack is = new ItemStack(item.material);
             ItemMeta meta = is.getItemMeta();
             if (meta != null) {
-                meta.setDisplayName(plugin.color(item.name));
+                meta.setDisplayName(plugin.color(applyPlaceholders(item.name, item)));
                 List<String> coloredLore = new ArrayList<>();
-                for (String l : item.lore) coloredLore.add(plugin.color(l));
+                for (String l : item.lore) coloredLore.add(plugin.color(applyPlaceholders(l, item)));
                 meta.setLore(coloredLore);
                 meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
                 is.setItemMeta(meta);
@@ -125,10 +198,12 @@ public class RtpManager {
             ItemStack is = new ItemStack(item.material);
             ItemMeta meta = is.getItemMeta();
             if (meta != null) {
-                meta.setDisplayName(plugin.color(item.name));
+                meta.setDisplayName(plugin.color(applyPlaceholders(item.name, item)));
                 List<UUID> q = queueMap.getOrDefault(item.key, Collections.emptyList());
                 List<String> coloredLore = new ArrayList<>();
-                for (String l : item.lore) coloredLore.add(plugin.color(l.replace("{current_queue}", String.valueOf(q.size()))));
+                for (String l : item.lore) {
+                    coloredLore.add(plugin.color(applyPlaceholders(l, item).replace("{current_queue}", String.valueOf(q.size()))));
+                }
                 meta.setLore(coloredLore);
                 meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
                 is.setItemMeta(meta);
@@ -159,11 +234,13 @@ public class RtpManager {
     }
 
     public boolean leaveQueueCommand(Player player) {
+        UUID uuid = player.getUniqueId();
+        queueJoinTime.remove(uuid);
         for (Map.Entry<String, List<UUID>> entry : queueMap.entrySet()) {
-            if (entry.getValue().remove(player.getUniqueId())) {
+            if (entry.getValue().remove(uuid)) {
                 RtpItem item = rtpqItems.get(entry.getKey());
-                String displayName = item != null ? item.name : entry.getKey();
-                player.sendMessage(plugin.color(plugin.getMsg("rtp-messages.left-queue", "{prefix}&#f38ba8You left the queue!").replace("{display_name}", displayName)));
+                String msg = applyPlaceholders(plugin.getMsg("rtp-messages.left-queue", "{prefix}&#f38ba8You left the queue!"), item);
+                player.sendMessage(plugin.color(msg));
                 return true;
             }
         }
@@ -173,44 +250,60 @@ public class RtpManager {
 
     public void removePlayerFromAllQueues(UUID uuid) {
         for (List<UUID> list : queueMap.values()) list.remove(uuid);
+        queueJoinTime.remove(uuid);
         inCountdown.remove(uuid);
     }
 
     private void toggleQueue(Player player, RtpItem item) {
-        if (inCountdown.contains(player.getUniqueId())) return;
+        UUID uuid = player.getUniqueId();
+        if (inCountdown.contains(uuid)) return;
         List<UUID> q = queueMap.get(item.key);
         if (q == null) return;
 
-        if (q.contains(player.getUniqueId())) {
-            q.remove(player.getUniqueId());
-            player.sendMessage(plugin.color(plugin.getMsg("rtp-messages.left-queue", "{prefix}&#f38ba8You left the queue!").replace("{display_name}", item.name)));
+        if (q.contains(uuid)) {
+            q.remove(uuid);
+            queueJoinTime.remove(uuid);
+            player.sendMessage(plugin.color(applyPlaceholders(plugin.getMsg("rtp-messages.left-queue", "{prefix}&#f38ba8You left the queue!"), item)));
             return;
         }
 
         for (List<UUID> list : queueMap.values()) {
-            if (list.contains(player.getUniqueId())) {
+            if (list.contains(uuid)) {
                 player.sendMessage(plugin.color(plugin.getMsg("rtp-messages.already-in-other-queue", "{prefix}&#f38ba8You are already in another queue!")));
                 return;
             }
         }
 
-        q.add(player.getUniqueId());
-        player.sendMessage(plugin.color(plugin.getMsg("rtp-messages.joined-queue", "{prefix}&#89dcebJoined queue {display_name} ({current}/2)!")
-                .replace("{display_name}", item.name).replace("{mode}", item.modeDisplay).replace("{current}", String.valueOf(q.size()))));
+        q.add(uuid);
+        queueJoinTime.put(uuid, System.currentTimeMillis());
+
+        player.sendMessage(plugin.color(applyPlaceholders(plugin.getMsg("rtp-messages.joined-queue", "{prefix}&#89dcebJoined queue ({current}/2)!"), item)
+                .replace("{current}", String.valueOf(q.size()))));
 
         if (q.size() == 1) {
-            Bukkit.broadcastMessage(plugin.color(plugin.getMsg("rtp-messages.queue-broadcast", "{prefix}&#89b4faPlayer {player} is looking for a 1v1 match in {mode} (1/2)!")
-                    .replace("{player}", player.getName()).replace("{display_name}", item.name).replace("{mode}", item.modeDisplay).replace("{current}", "1")));
+            Bukkit.broadcastMessage(plugin.color(applyPlaceholders(plugin.getMsg("rtp-messages.queue-broadcast", "{prefix}&#89b4fa{player} is queuing for {mode} (1/2)!"), item)
+                    .replace("{player}", player.getName()).replace("{current}", "1")));
         }
 
         if (q.size() >= 2) {
-            Player p1 = Bukkit.getPlayer(q.remove(0));
-            Player p2 = Bukkit.getPlayer(q.remove(0));
+            UUID u1 = q.remove(0);
+            UUID u2 = q.remove(0);
+            queueJoinTime.remove(u1);
+            queueJoinTime.remove(u2);
+
+            Player p1 = Bukkit.getPlayer(u1);
+            Player p2 = Bukkit.getPlayer(u2);
             if (p1 != null && p2 != null && p1.isOnline() && p2.isOnline()) {
                 startMatchmaking(p1, p2, item);
             } else {
-                if (p1 != null && p1.isOnline()) q.add(p1.getUniqueId());
-                if (p2 != null && p2.isOnline()) q.add(p2.getUniqueId());
+                if (p1 != null && p1.isOnline()) {
+                    q.add(u1);
+                    queueJoinTime.put(u1, System.currentTimeMillis());
+                }
+                if (p2 != null && p2.isOnline()) {
+                    q.add(u2);
+                    queueJoinTime.put(u2, System.currentTimeMillis());
+                }
             }
         }
     }
@@ -222,8 +315,8 @@ public class RtpManager {
         inCountdown.add(p2.getUniqueId());
 
         for (String line : plugin.getConfig().getStringList("rtp-messages.match-found-broadcast")) {
-            Bukkit.broadcastMessage(plugin.color(line.replace("{player1}", p1.getName()).replace("{player2}", p2.getName())
-                    .replace("{mode}", item.modeDisplay).replace("{map}", item.mapDisplay).replace("{world}", item.worldName)));
+            Bukkit.broadcastMessage(plugin.color(applyPlaceholders(line, item)
+                    .replace("{player1}", p1.getName()).replace("{player2}", p2.getName())));
         }
 
         int countdown = plugin.getConfig().getInt("rtpq-menu.countdown-seconds", 5);
@@ -244,11 +337,11 @@ public class RtpManager {
                 }
                 if (timer > 0) {
                     String emojiTitle = getCircleEmoji(timer);
-                    String sub = plugin.color(plugin.getMsg("rtp-messages.match-countdown-subtitle", "&#cdd6f4Prepare for battle..."));
+                    String sub = plugin.color(applyPlaceholders(plugin.getMsg("rtp-messages.match-countdown-subtitle", "&#cdd6f4Prepare for battle..."), item));
                     p1.sendTitle(emojiTitle, sub, 0, 25, 5);
                     p2.sendTitle(emojiTitle, sub, 0, 25, 5);
 
-                    String abTemplate = plugin.getMsg("rtp-messages.match-actionbar", "Opponent: {opponent_prefix}{opponent_name}");
+                    String abTemplate = applyPlaceholders(plugin.getMsg("rtp-messages.match-actionbar", "{icon} Opponent: {opponent_prefix}{opponent_name}"), item);
                     sendActionbar(p1, abTemplate.replace("{opponent_prefix}", p2Prefix).replace("{opponent_name}", p2.getName()).replace("{time}", String.valueOf(timer)));
                     sendActionbar(p2, abTemplate.replace("{opponent_prefix}", p1Prefix).replace("{opponent_name}", p1.getName()).replace("{time}", String.valueOf(timer)));
 
@@ -307,7 +400,7 @@ public class RtpManager {
         }
 
         if (loc1 == null || loc2 == null) {
-            String err = plugin.color(plugin.getMsg("rtp-messages.safe-loc-not-found", "&#f38ba8Could not find a safe flat location!"));
+            String err = plugin.color(applyPlaceholders(plugin.getMsg("rtp-messages.safe-loc-not-found", "&#f38ba8Could not find a safe flat location!"), item));
             p1.sendMessage(err);
             p2.sendMessage(err);
             return;
@@ -320,8 +413,8 @@ public class RtpManager {
         p1.teleport(loc1);
         p2.teleport(loc2);
 
-        String fTitle = plugin.color(plugin.getMsg("rtp-messages.match-started-title", "&#a6e3a1&lFIGHT!"));
-        String fSub = plugin.color(plugin.getMsg("rtp-messages.match-started-subtitle", "&#cdd6f4Good luck!"));
+        String fTitle = plugin.color(applyPlaceholders(plugin.getMsg("rtp-messages.match-started-title", "&#a6e3a1&lFIGHT!"), item));
+        String fSub = plugin.color(applyPlaceholders(plugin.getMsg("rtp-messages.match-started-subtitle", "&#cdd6f4Good luck!"), item));
         p1.sendTitle(fTitle, fSub, 5, 40, 10);
         p2.sendTitle(fTitle, fSub, 5, 40, 10);
         p1.playSound(loc1, Sound.ENTITY_PLAYER_LEVELUP, 1f, 1f);
@@ -331,15 +424,15 @@ public class RtpManager {
     private void executeRtp(Player player, RtpItem item) {
         World world = Bukkit.getWorld(item.worldName);
         if (world == null) return;
-        player.sendMessage(plugin.color(plugin.getMsg("rtp-messages.teleporting-rtp", "&#89dcebFinding safe location...").replace("{display_name}", item.name)));
+        player.sendMessage(plugin.color(applyPlaceholders(plugin.getMsg("rtp-messages.teleporting-rtp", "&#89dcebFinding safe location..."), item)));
         Location loc = findSafeLocation(world, item.minX, item.maxX, item.minZ, item.maxZ, Collections.singleton(player.getUniqueId()));
         if (loc != null) {
             player.teleport(loc);
             player.playSound(loc, Sound.ENTITY_ENDERMAN_TELEPORT, 1f, 1f);
-            player.sendMessage(plugin.color(plugin.getMsg("rtp-messages.teleport-success", "&#a6e3a1Teleported!")
+            player.sendMessage(plugin.color(applyPlaceholders(plugin.getMsg("rtp-messages.teleport-success", "&#a6e3a1Teleported!"), item)
                     .replace("{x}", String.valueOf(loc.getBlockX())).replace("{y}", String.valueOf(loc.getBlockY())).replace("{z}", String.valueOf(loc.getBlockZ()))));
         } else {
-            player.sendMessage(plugin.color(plugin.getMsg("rtp-messages.safe-loc-not-found", "&#f38ba8Could not find a safe flat location!")));
+            player.sendMessage(plugin.color(applyPlaceholders(plugin.getMsg("rtp-messages.safe-loc-not-found", "&#f38ba8Could not find a safe flat location!"), item)));
         }
     }
 
@@ -411,4 +504,4 @@ public class RtpManager {
         }
         return "";
     }
-}
+    }
