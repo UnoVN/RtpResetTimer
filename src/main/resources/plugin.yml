@@ -15,4 +15,12 @@ commands:
     description: Open 1v1 Battle Queue menu
     aliases: [rtpqueue]
     permission: rtpreset.use
+
+permissions:
+  rtpreset.admin:
+    description: Admin permission for RtpResetTimer
+    default: op
+  rtpreset.use:
+    description: Allow all players to use /rtp and /rtpq by default
+    default: true
     
