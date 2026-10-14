@@ -263,8 +263,8 @@ public class RtpManager {
         } else if (!activeQueues.isEmpty()) {
             selected = new LinkedHashSet<>(activeQueues);
         } else {
+            // Để trống hoàn toàn khi mới mở GUI (không tự động chọn HT KIT)
             selected = new LinkedHashSet<>();
-            if (!rtpqItems.isEmpty()) selected.add(rtpqItems.keySet().iterator().next());
         }
 
         Component title = plugin.toComponent(plugin.getConfig().getString("rtpq-menu.title", "&#cdd6f4&l1V1 BATTLE QUEUE"));
@@ -842,4 +842,5 @@ public class RtpManager {
         }
         return "";
     }
-}
+        }
+                             
