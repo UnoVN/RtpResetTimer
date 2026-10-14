@@ -83,7 +83,7 @@ public class RtpManager {
         item.slot = sec.getInt("slot", 0);
         Material mat = Material.matchMaterial(sec.getString("material", "STONE").toUpperCase());
         item.material = mat != null ? mat : Material.STONE;
-        item.icon = sec.getString("icon", "<white><sprite:item/crossbow_standby></white>");
+        item.icon = sec.getString("icon", "<white><sprite:items:item/crossbow_standby></white>");
         item.name = sec.getString("name", key);
         item.modeDisplay = sec.getString("mode-display", key.toUpperCase());
         item.mapDisplay = sec.getString("map-display", "RTP Desert");
@@ -127,16 +127,16 @@ public class RtpManager {
                             queueJoinTime.remove(uuid);
                             String timeoutFmt = String.format("%02d:%02d", maxTimeoutSec / 60, maxTimeoutSec % 60);
                             p.sendMessage(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.queue-timeout",
-                                    "{prefix}{icon} &#f38ba8Queue timed out!"), item).replace("{timeout}", timeoutFmt)));
+                                    "{prefix}&#f38ba8You were removed from the {icon} &#fab387{mode} &#f38ba8queue!"), item).replace("{timeout}", timeoutFmt)));
                             p.sendActionBar(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.queue-timeout-actionbar",
-                                    "{icon} &#f38ba8&lQUEUE TIMED OUT!"), item)));
+                                    "&#f38ba8&lQUEUE TIMED OUT! &8({icon} &#fab387{mode}&8)"), item)));
                             p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 0.8f);
                             continue;
                         }
 
                         String elapsedStr = String.format("%02d:%02d", elapsedSec / 60, elapsedSec % 60);
                         String ab = applyPlaceholders(plugin.getMsg("rtp-messages.queue-waiting-actionbar",
-                                "{icon} &#89dcebQueue: &#fab387{mode} &8| &#89dcebElapsed: &#a6e3a1{elapsed}"), item)
+                                "&#89dcebQueue: {icon} &#fab387{mode} &8| &#89dcebElapsed: &#a6e3a1{elapsed}"), item)
                                 .replace("{elapsed}", elapsedStr);
                         p.sendActionBar(plugin.toComponent(ab));
                     }
@@ -196,15 +196,23 @@ public class RtpManager {
         Inventory inv = Bukkit.createInventory(new RtpQueueGuiHolder(), size, title);
         applyFiller(inv, "rtpq-menu");
 
+        String actionJoin = plugin.getConfig().getString("rtpq-menu.action-join", "<glyph:left_click> &#a6e3a1Click to join queue");
+        String actionLeave = plugin.getConfig().getString("rtpq-menu.action-leave", "<glyph:left_click> &#f38ba8Click to leave queue");
+
         for (RtpItem item : rtpqItems.values()) {
             ItemStack is = new ItemStack(item.material);
             ItemMeta meta = is.getItemMeta();
             if (meta != null) {
                 meta.displayName(plugin.toComponent(applyPlaceholders(item.name, item)).decoration(TextDecoration.ITALIC, false));
                 List<UUID> q = queueMap.getOrDefault(item.key, Collections.emptyList());
+                boolean inThisQueue = q.contains(player.getUniqueId());
+                String clickActionText = inThisQueue ? actionLeave : actionJoin;
+
                 List<Component> coloredLore = new ArrayList<>();
                 for (String l : item.lore) {
-                    String line = applyPlaceholders(l, item).replace("{current_queue}", String.valueOf(q.size()));
+                    String line = applyPlaceholders(l, item)
+                            .replace("{current_queue}", String.valueOf(q.size()))
+                            .replace("{click_action}", clickActionText);
                     coloredLore.add(plugin.toComponent(line).decoration(TextDecoration.ITALIC, false));
                 }
                 meta.lore(coloredLore);
@@ -242,7 +250,7 @@ public class RtpManager {
         for (Map.Entry<String, List<UUID>> entry : queueMap.entrySet()) {
             if (entry.getValue().remove(uuid)) {
                 RtpItem item = rtpqItems.get(entry.getKey());
-                String msg = applyPlaceholders(plugin.getMsg("rtp-messages.left-queue", "{prefix}&#f38ba8You left the queue!"), item);
+                String msg = applyPlaceholders(plugin.getMsg("rtp-messages.left-queue", "{prefix}&#f38ba8You left the {icon} &#fab387{mode} &#f38ba8queue."), item);
                 player.sendMessage(plugin.toComponent(msg));
                 return true;
             }
@@ -266,7 +274,7 @@ public class RtpManager {
         if (q.contains(uuid)) {
             q.remove(uuid);
             queueJoinTime.remove(uuid);
-            player.sendMessage(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.left-queue", "{prefix}&#f38ba8You left the queue!"), item)));
+            player.sendMessage(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.left-queue", "{prefix}&#f38ba8You left the {icon} &#fab387{mode} &#f38ba8queue."), item)));
             return;
         }
 
@@ -280,11 +288,11 @@ public class RtpManager {
         q.add(uuid);
         queueJoinTime.put(uuid, System.currentTimeMillis());
 
-        player.sendMessage(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.joined-queue", "{prefix}&#89dcebJoined queue ({current}/2)!"), item)
+        player.sendMessage(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.joined-queue", "{prefix}&#89dcebYou joined the {icon} &#fab387{mode} &#89dcebqueue ({current}/2)!"), item)
                 .replace("{current}", String.valueOf(q.size()))));
 
         if (q.size() == 1) {
-            Bukkit.broadcast(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.queue-broadcast", "{prefix}&#89b4fa{player} is queuing for {mode} (1/2)!"), item)
+            Bukkit.broadcast(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.queue-broadcast", "{prefix}&#89b4faPlayer {player} is queuing for {icon} &#fab387{mode} (1/2)!"), item)
                     .replace("{player}", player.getName()).replace("{current}", "1")));
         }
 
@@ -340,13 +348,13 @@ public class RtpManager {
                 }
                 if (timer > 0) {
                     Component emojiTitle = getCircleEmoji(timer);
-                    Component sub = plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.match-countdown-subtitle", "&#cdd6f4Prepare for battle..."), item));
+                    Component sub = plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.match-countdown-subtitle", "&#cdd6f4Mode: {icon} &#fab387{mode}"), item));
                     Title.Times times = Title.Times.times(Duration.ZERO, Duration.ofMillis(1250), Duration.ofMillis(250));
                     Title titleObj = Title.title(emojiTitle, sub, times);
                     p1.showTitle(titleObj);
                     p2.showTitle(titleObj);
 
-                    String abTemplate = applyPlaceholders(plugin.getMsg("rtp-messages.match-actionbar", "{icon} Opponent: {opponent_prefix}{opponent_name}"), item);
+                    String abTemplate = applyPlaceholders(plugin.getMsg("rtp-messages.match-actionbar", "&#89dcebMode: {icon} &#fab387{mode} &8| &#89b4faOpponent: {opponent_prefix}{opponent_name}"), item);
                     p1.sendActionBar(plugin.toComponent(abTemplate.replace("{opponent_prefix}", p2Prefix).replace("{opponent_name}", p2.getName()).replace("{time}", String.valueOf(timer))));
                     p2.sendActionBar(plugin.toComponent(abTemplate.replace("{opponent_prefix}", p1Prefix).replace("{opponent_name}", p1.getName()).replace("{time}", String.valueOf(timer))));
 
@@ -419,7 +427,7 @@ public class RtpManager {
         p2.teleport(loc2);
 
         Component fTitle = plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.match-started-title", "&#a6e3a1&lFIGHT!"), item));
-        Component fSub = plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.match-started-subtitle", "{icon} &#cdd6f4Good luck!"), item));
+        Component fSub = plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.match-started-subtitle", "&#cdd6f4Good luck!"), item));
         Title.Times times = Title.Times.times(Duration.ofMillis(250), Duration.ofMillis(2000), Duration.ofMillis(500));
         Title fightTitleObj = Title.title(fTitle, fSub, times);
         p1.showTitle(fightTitleObj);
@@ -507,4 +515,4 @@ public class RtpManager {
         }
         return "";
     }
-            }
+                    }
