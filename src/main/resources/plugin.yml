@@ -1,5 +1,5 @@
 name: RtpResetTimer
-version: '1.2.0'
+version: '1.3.0'
 main: com.server.rtpreset.RtpResetTimer
 api-version: '1.21'
 author: Nhan
@@ -15,12 +15,15 @@ commands:
     description: Open 1v1 Battle Queue menu
     aliases: [rtpqueue]
     permission: rtpreset.use
+  duel:
+    description: Challenge a player to a 1v1 Duel
+    permission: rtpreset.use
 
 permissions:
   rtpreset.admin:
     description: Admin permission for RtpResetTimer
     default: op
   rtpreset.use:
-    description: Allow all players to use /rtp and /rtpq by default
+    description: Allow all players to use /rtp, /rtpq, and /duel by default
     default: true
     
