@@ -9,9 +9,6 @@
 # ║  • Crossbow:      <white><sprite:items:item/crossbow_standby></white>      ║
 # ║  • Loaded C-Bow:  <white><sprite:items:item/crossbow_arrow></white>        ║
 # ║  • Bow:           <white><sprite:items:item/bow></white>                   ║
-# ║  • TNT Minecart:  <white><sprite:items:item/tnt_minecart></white>          ║
-# ║  • End Crystal:   <white><sprite:items:item/end_crystal></white>           ║
-# ║  • Totem:         <white><sprite:items:item/totem_of_undying></white>      ║
 # ║  • Sand Block:    <white><sprite:blocks:block/sand></white>                ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
@@ -65,12 +62,12 @@ rtp-menu:
       slot: 13
       material: "SAND"
       icon: "<white><sprite:blocks:block/sand></white>"
-      name: "&#89dceb&lRTP Desert"
+      name: "{icon} &#89dceb&lRTP Desert"
       lore:
         - "&#a6adc8Free-for-all combat arena"
         - "&#a6adc8Safe & flat terrain detection"
         - ""
-        - "&#a6e3a1» Click to teleport randomly"
+        - "<glyph:left_click> &#a6e3a1Click to teleport randomly"
       world: "rtpdesert"
       min-x: 20
       max-x: 820
@@ -96,6 +93,10 @@ rtpq-menu:
     material: "BLACK_STAINED_GLASS_PANE"
     name: " "
 
+  # Dynamic lore line for {click_action} depending on whether player is in queue
+  action-join: "<glyph:left_click> &#a6e3a1Click to join queue"
+  action-leave: "<glyph:left_click> &#f38ba8Click to leave queue"
+
   countdown-titles:
     5: "&#f38ba8&l❺"
     4: "&#f38ba8&l❹"
@@ -108,7 +109,7 @@ rtpq-menu:
       slot: 11
       material: "CROSSBOW"
       icon: "<white><sprite:items:item/crossbow_standby></white>"
-      name: "&#fab387&lHT KIT (1v1)"
+      name: "{icon} &#fab387&lHT KIT (1v1)"
       mode-display: "HT KIT"
       map-display: "RTP Desert"
       lore:
@@ -116,7 +117,7 @@ rtpq-menu:
         - "&#a6adc8Map: &#89dcebRTP Desert"
         - "&#a6adc8Players in Queue: &#fab387{current_queue}/2"
         - ""
-        - "&#a6e3a1» Click to join or leave queue"
+        - "{click_action}"
       world: "rtpdesert"
       min-x: 50
       max-x: 790
@@ -127,7 +128,7 @@ rtpq-menu:
       slot: 15
       material: "BOW"
       icon: "<white><sprite:items:item/bow></white>"
-      name: "&#89dceb&lLT KIT (1v1)"
+      name: "{icon} &#89dceb&lLT KIT (1v1)"
       mode-display: "LT KIT"
       map-display: "RTP Desert"
       lore:
@@ -135,7 +136,7 @@ rtpq-menu:
         - "&#a6adc8Map: &#89dcebRTP Desert"
         - "&#a6adc8Players in Queue: &#89dceb{current_queue}/2"
         - ""
-        - "&#a6e3a1» Click to join or leave queue"
+        - "{click_action}"
       world: "rtpdesert"
       min-x: 50
       max-x: 790
@@ -175,17 +176,17 @@ messages:
     no-worlds: "{prefix}&#f38ba8No worlds configured in config.yml!"
 
 rtp-messages:
-  # Chat Messages (Uses {prefix} ONLY - no {icon} next to prefix)
-  joined-queue: "{prefix}&#89dcebYou joined the &#fab387{mode} &#89dcebqueue (&#a6e3a1{current}/2&#89dceb)!"
-  left-queue: "{prefix}&#f38ba8You left the &#fab387{mode} &#f38ba8queue."
+  # Chat Messages ({icon} placed directly before {mode})
+  joined-queue: "{prefix}&#89dcebYou joined the {icon} &#fab387{mode} &#89dcebqueue (&#a6e3a1{current}/2&#89dceb)!"
+  left-queue: "{prefix}&#f38ba8You left the {icon} &#fab387{mode} &#f38ba8queue."
   not-in-queue: "{prefix}&#f38ba8You are not currently in any queue."
   already-in-other-queue: "{prefix}&#f38ba8You are already in another queue! Please leave it first."
-  queue-broadcast: "{prefix}&#89b4faPlayer &#cba6f7{player} &#89b4fais queuing for &#fab387{mode} &#89b4fa(&#a6e3a1{current}/2&#89b4fa)! Use &#f9e2af/rtpq"
-  queue-timeout: "{prefix}&#f38ba8You were removed from the &#fab387{mode} &#f38ba8queue due to inactivity ({timeout})."
+  queue-broadcast: "{prefix}&#89b4faPlayer &#cba6f7{player} &#89b4fais queuing for {icon} &#fab387{mode} &#89b4fa(&#a6e3a1{current}/2&#89b4fa)! Use &#f9e2af/rtpq"
+  queue-timeout: "{prefix}&#f38ba8You were removed from the {icon} &#fab387{mode} &#f38ba8queue due to inactivity ({timeout})."
 
-  # Actionbars & Subtitles (No {prefix}, uses {icon} sprite cleanly)
-  queue-waiting-actionbar: "{icon} &#89dcebQueue: &#fab387{mode} &8| &#89dcebElapsed: &#a6e3a1{elapsed} &8| &#a6adc8/rtpq leave"
-  queue-timeout-actionbar: "{icon} &#f38ba8&lQUEUE TIMED OUT!"
+  # Actionbars ({icon} placed directly before {mode}, NOT before 'Queue:')
+  queue-waiting-actionbar: "&#89dcebQueue: {icon} &#fab387{mode} &8| &#89dcebElapsed: &#a6e3a1{elapsed} &8| &#a6adc8/rtpq leave"
+  queue-timeout-actionbar: "&#f38ba8&lQUEUE TIMED OUT! &8({icon} &#fab387{mode}&8)"
 
   match-found-broadcast:
     - ""
@@ -194,13 +195,13 @@ rtp-messages:
     - " &8» &#89dcebMode: {icon} &#b4befe{mode} &8| &#89dcebMap: &#b4befe{map}"
     - ""
 
-  match-actionbar: "{icon} &#89b4faOpponent: {opponent_prefix}&#cdd6f4{opponent_name} &8| &#89dcebStarting in: &#fab387{time}s"
-  match-countdown-subtitle: "{icon} &#cdd6f4Prepare for battle..."
+  match-actionbar: "&#89dcebMode: {icon} &#fab387{mode} &8| &#89b4faOpponent: {opponent_prefix}&#cdd6f4{opponent_name} &8| &#fab387{time}s"
+  match-countdown-subtitle: "&#cdd6f4Mode: {icon} &#fab387{mode}"
   match-started-title: "&#a6e3a1&lFIGHT!"
-  match-started-subtitle: "{icon} &#cdd6f4Good luck!"
+  match-started-subtitle: "&#cdd6f4Good luck!"
 
-  # Teleport Chat Feedback (Uses {prefix} ONLY)
-  teleporting-rtp: "{prefix}&#89dcebFinding a safe location in &#fab387{map}&#89dceb..."
+  # Teleport Chat Feedback ({icon} placed directly before {map})
+  teleporting-rtp: "{prefix}&#89dcebFinding a safe location in {icon} &#fab387{map}&#89dceb..."
   teleport-success: "{prefix}&#a6e3a1Teleported to &#89dcebX: {x}, Y: {y}, Z: {z}&#a6e3a1!"
   safe-loc-not-found: "{prefix}&#f38ba8Could not find a safe flat location, please try again!"
   
