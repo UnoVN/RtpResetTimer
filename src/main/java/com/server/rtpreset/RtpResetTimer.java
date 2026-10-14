@@ -23,14 +23,9 @@ import java.util.regex.Pattern;
 public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
 
     public static class WorldProfile {
-        public String key;
-        public String targetWorld;
-        public String displayName;
-        public int resetIntervalSeconds;
-        public int remainingSeconds;
-        public double borderCenterX;
-        public double borderCenterZ;
-        public double borderSize;
+        public String key, targetWorld, displayName;
+        public int resetIntervalSeconds, remainingSeconds;
+        public double borderCenterX, borderCenterZ, borderSize;
         public List<String> postResetCommands;
         public boolean isResetting = false;
 
@@ -55,21 +50,10 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
     private double spawnX, spawnY, spawnZ;
     private float spawnYaw, spawnPitch;
 
-    private String prefix;
-    private String msgCountdownNormal;
-    private String msgCountdownWarning;
-    private String msgCountdownUrgent;
-    private String msgResetting;
-    private String msgPlayerTeleported;
-    private String msgResetSuccess;
-    private String msgNextReset;
-
-    private String msgAdminNoPermission;
-    private String msgAdminReloadSuccess;
-    private String msgAdminManualResetSingle;
-    private String msgAdminManualResetAll;
-    private String msgAdminWorldNotFound;
-    private String msgAdminNoWorlds;
+    private String prefix, msgCountdownNormal, msgCountdownWarning, msgCountdownUrgent;
+    private String msgResetting, msgPlayerTeleported, msgResetSuccess, msgNextReset;
+    private String msgAdminNoPermission, msgAdminReloadSuccess, msgAdminManualResetSingle;
+    private String msgAdminManualResetAll, msgAdminWorldNotFound, msgAdminNoWorlds;
 
     private BukkitTask mainTimerTask;
     private RtpManager rtpManager;
@@ -98,9 +82,7 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
 
     @Override
     public void onDisable() {
-        if (mainTimerTask != null) {
-            mainTimerTask.cancel();
-        }
+        if (mainTimerTask != null) mainTimerTask.cancel();
     }
 
     public RtpManager getRtpManager() {
@@ -108,8 +90,7 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
     }
 
     public String getMsg(String path, String def) {
-        String s = getConfig().getString(path, def);
-        return s.replace("{prefix}", prefix);
+        return getConfig().getString(path, def).replace("{prefix}", prefix);
     }
 
     public void loadConfiguration() {
@@ -147,25 +128,18 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
                 String target = section.getString(key + ".target-world", key);
                 String display = section.getString(key + ".display-name", key);
                 int interval = section.getInt(key + ".reset-interval-seconds", 1800);
-
                 double bX = section.getDouble(key + ".worldborder.center-x", 0.0);
                 double bZ = section.getDouble(key + ".worldborder.center-z", 0.0);
                 double bSize = section.getDouble(key + ".worldborder.size", 1000.0);
-
                 List<String> cmds = section.getStringList(key + ".post-reset-commands");
 
                 WorldProfile profile = new WorldProfile(key, target, display, interval, bX, bZ, bSize, cmds);
                 worldProfiles.put(key.toLowerCase(), profile);
-
-                if (defaultWorldKey == null) {
-                    defaultWorldKey = key.toLowerCase();
-                }
+                if (defaultWorldKey == null) defaultWorldKey = key.toLowerCase();
             }
         }
 
-        if (rtpManager != null) {
-            rtpManager.loadConfig();
-        }
+        if (rtpManager != null) rtpManager.loadConfig();
     }
 
     public int getRemainingSeconds() {
@@ -202,12 +176,9 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
     private String formatMessage(String template, WorldProfile profile, String timeStr) {
         String res = template.replace("{prefix}", prefix);
         if (profile != null) {
-            res = res.replace("{display_name}", profile.displayName)
-                     .replace("{world}", profile.targetWorld);
+            res = res.replace("{display_name}", profile.displayName).replace("{world}", profile.targetWorld);
         }
-        if (timeStr != null) {
-            res = res.replace("{time}", timeStr);
-        }
+        if (timeStr != null) res = res.replace("{time}", timeStr);
         return color(res);
     }
 
@@ -216,46 +187,28 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
     }
 
     private String formatDuration(int totalSeconds) {
-        if (totalSeconds >= 60 && totalSeconds % 60 == 0) {
-            return (totalSeconds / 60) + "m";
-        } else if (totalSeconds >= 60) {
-            return (totalSeconds / 60) + "m " + (totalSeconds % 60) + "s";
-        }
+        if (totalSeconds >= 60 && totalSeconds % 60 == 0) return (totalSeconds / 60) + "m";
+        if (totalSeconds >= 60) return (totalSeconds / 60) + "m " + (totalSeconds % 60) + "s";
         return totalSeconds + "s";
     }
 
     private void startTimerLoop() {
-        if (mainTimerTask != null) {
-            mainTimerTask.cancel();
-        }
+        if (mainTimerTask != null) mainTimerTask.cancel();
 
         mainTimerTask = new BukkitRunnable() {
             @Override
             public void run() {
                 for (WorldProfile profile : worldProfiles.values()) {
                     if (profile.isResetting) continue;
-
                     profile.remainingSeconds--;
 
                     switch (profile.remainingSeconds) {
-                        case 1200:
-                        case 900:
-                        case 600:
-                        case 300:
-                        case 180:
-                            broadcast(formatMessage(msgCountdownNormal, profile, formatDuration(profile.remainingSeconds)));
-                            break;
-                        case 60:
-                        case 30:
-                            broadcast(formatMessage(msgCountdownWarning, profile, formatDuration(profile.remainingSeconds)));
-                            break;
-                        case 5:
-                        case 4:
-                        case 3:
-                        case 2:
-                        case 1:
-                            broadcast(formatMessage(msgCountdownUrgent, profile, profile.remainingSeconds + "s"));
-                            break;
+                        case 1200, 900, 600, 300, 180 ->
+                                broadcast(formatMessage(msgCountdownNormal, profile, formatDuration(profile.remainingSeconds)));
+                        case 60, 30 ->
+                                broadcast(formatMessage(msgCountdownWarning, profile, formatDuration(profile.remainingSeconds)));
+                        case 5, 4, 3, 2, 1 ->
+                                broadcast(formatMessage(msgCountdownUrgent, profile, profile.remainingSeconds + "s"));
                     }
 
                     if (profile.remainingSeconds <= 0) {
@@ -275,7 +228,6 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         if (lobbyWorld != null) {
             Location lobbyLocation = new Location(lobbyWorld, spawnX, spawnY, spawnZ, spawnYaw, spawnPitch);
             World targetWorldObj = Bukkit.getWorld(profile.targetWorld);
-
             if (targetWorldObj != null) {
                 for (Player player : targetWorldObj.getPlayers()) {
                     player.teleport(lobbyLocation);
@@ -297,7 +249,6 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
                     WorldBorder border = loadedWorld.getWorldBorder();
                     border.setCenter(profile.borderCenterX, profile.borderCenterZ);
                     border.setSize(profile.borderSize);
-
                     loadedWorld.setTime(1000L);
 
                     for (String cmd : profile.postResetCommands) {
@@ -349,9 +300,8 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         if (args.length > 0 && args[0].equalsIgnoreCase("reload")) {
             loadConfiguration();
             startTimerLoop();
-            String reloadMsg = msgAdminReloadSuccess.replace("{prefix}", prefix)
-                                                   .replace("{count}", String.valueOf(worldProfiles.size()));
-            sender.sendMessage(color(reloadMsg));
+            sender.sendMessage(color(msgAdminReloadSuccess.replace("{prefix}", prefix)
+                    .replace("{count}", String.valueOf(worldProfiles.size()))));
             return true;
         }
 
@@ -377,26 +327,21 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
             }
 
             if (profile != null) {
-                String manualMsg = msgAdminManualResetSingle.replace("{prefix}", prefix)
-                                                            .replace("{display_name}", profile.displayName)
-                                                            .replace("{world}", profile.targetWorld);
-                sender.sendMessage(color(manualMsg));
+                sender.sendMessage(color(msgAdminManualResetSingle.replace("{prefix}", prefix)
+                        .replace("{display_name}", profile.displayName).replace("{world}", profile.targetWorld)));
                 profile.remainingSeconds = profile.resetIntervalSeconds;
                 performWorldReset(profile);
             } else {
-                String notFoundMsg = msgAdminWorldNotFound.replace("{prefix}", prefix)
-                                                          .replace("{available}", String.join(", ", worldProfiles.keySet()));
-                sender.sendMessage(color(notFoundMsg));
+                sender.sendMessage(color(msgAdminWorldNotFound.replace("{prefix}", prefix)
+                        .replace("{available}", String.join(", ", worldProfiles.keySet()))));
             }
             return true;
         }
 
         if (defaultWorldKey != null) {
             WorldProfile defProfile = worldProfiles.get(defaultWorldKey);
-            String manualMsg = msgAdminManualResetSingle.replace("{prefix}", prefix)
-                                                        .replace("{display_name}", defProfile.displayName)
-                                                        .replace("{world}", defProfile.targetWorld);
-            sender.sendMessage(color(manualMsg));
+            sender.sendMessage(color(msgAdminManualResetSingle.replace("{prefix}", prefix)
+                    .replace("{display_name}", defProfile.displayName).replace("{world}", defProfile.targetWorld)));
             defProfile.remainingSeconds = defProfile.resetIntervalSeconds;
             performWorldReset(defProfile);
         } else {
