@@ -1,13 +1,7 @@
 # ╔════════════════════════════════════════════════════════════════════════════╗
 # ║               RTP RESET TIMER, 1V1 QUEUE & DUEL CONFIGURATION              ║
-# ║                 Theme: Minimalist Catppuccin Mocha (1.21.9+)               ║
-# ╠════════════════════════════════════════════════════════════════════════════╣
-# ║  MINIMALIST COLOR PALETTE:                                                 ║
-# ║  • Base Text:    &#cdd6f4 (White-ish)   • Subtext:   &#a6adc8 (Soft Gray)  ║
-# ║  • Primary Info: &#89b4fa (Blue)        • Success:   &#a6e3a1 (Green)      ║
-# ║  • Warning:      &#fab387 (Peach)       • Danger:    &#f38ba8 (Red)        ║
+# ║                 Theme: Minimalist Catppuccin Mocha (1.21.11)               ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
-
 
 # ==============================================================================
 # [1] SAFE LOBBY SPAWN
@@ -22,7 +16,7 @@ lobby-spawn:
 
 
 # ==============================================================================
-# [2] AUTOMATED WORLD RESET (SlimeWorldManager)
+# [2] AUTOMATED WORLD RESET (SlimeWorldManager - 1.21.11)
 # ==============================================================================
 worlds:
   desert:
@@ -38,7 +32,7 @@ worlds:
     post-reset-commands:
       - "time set day"
       - "gamerule locator_bar false"
-      - "gamerule doDaylightCycle true"
+      - "gamerule advance_time false"
 
 
 # ==============================================================================
@@ -93,7 +87,6 @@ rtpq-menu:
   status-unselected: "<glyph:left_click> &#a6adc8Click to select"
   none-selected: "&#f38ba8None"
 
-  # Bottom-Center Confirm Button (Slot 22)
   confirm-button:
     slot: 22
     material: "LIME_CONCRETE"
@@ -103,7 +96,6 @@ rtpq-menu:
       - ""
       - "<glyph:left_click> &#a6e3a1Click to start queuing"
 
-  # Bottom-Center Leave Button (Slot 22 - Shown when already queuing)
   leave-button:
     slot: 22
     material: "RED_CONCRETE"
@@ -230,7 +222,6 @@ messages:
     no-worlds: "{prefix}&#f38ba8No worlds configured."
 
 rtp-messages:
-  # Queue Messages
   no-mode-selected: "{prefix}&#f38ba8Select at least one mode first."
   joined-queue: "{prefix}&#a6adc8Joined queue: {modes}"
   left-queue: "{prefix}&#a6adc8Left queue: {modes}"
@@ -256,8 +247,8 @@ rtp-messages:
   teleporting-rtp: "{prefix}&#a6adc8Teleporting to {icon} &#cdd6f4{map}&#a6adc8..."
   teleport-success: "{prefix}&#a6adc8Teleported to &#cdd6f4{x}, {y}, {z}"
   safe-loc-not-found: "{prefix}&#f38ba8Could not find a safe location, try again."
+  world-resetting: "{prefix}&#f38ba8Map is currently resetting, please wait a moment!"
 
-  # Duel Messages
   duel-usage: "{prefix}&#a6adc8Usage: &#cdd6f4/duel <player>"
   duel-player-not-found: "{prefix}&#f38ba8Player not found."
   duel-self: "{prefix}&#f38ba8You cannot duel yourself."
@@ -276,4 +267,3 @@ rtp-messages:
     - " &8» &#a6adc8Mode: {icon} &#cdd6f4{mode} &8| &#a6adc8Map: &#cdd6f4{map}"
     - " &8» <click:run_command:'/duel accept {sender_name}'><hover:show_text:'&#a6e3a1Click to accept'>&#a6e3a1[ACCEPT]</hover></click>  <click:run_command:'/duel deny {sender_name}'><hover:show_text:'&#f38ba8Click to decline'>&#f38ba8[DENY]</hover></click>"
     - ""
-    
