@@ -19,21 +19,22 @@ public class RtpListener implements Listener {
     public void onInventoryClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) return;
         InventoryHolder holder = event.getInventory().getHolder();
+        int slot = event.getRawSlot();
 
         if (holder instanceof RtpGuiHolder) {
             event.setCancelled(true);
-            if (event.getRawSlot() >= 0 && event.getRawSlot() < event.getInventory().getSize()) {
-                plugin.getRtpManager().handleRtpClick(player, event.getRawSlot());
+            if (slot >= 0 && slot < event.getInventory().getSize()) {
+                plugin.getRtpManager().handleRtpClick(player, slot);
             }
-        } else if (holder instanceof RtpQueueGuiHolder) {
+        } else if (holder instanceof RtpManager.QueueGuiHolder queueHolder) {
             event.setCancelled(true);
-            if (event.getRawSlot() >= 0 && event.getRawSlot() < event.getInventory().getSize()) {
-                plugin.getRtpManager().handleQueueClick(player, event.getRawSlot());
+            if (slot >= 0 && slot < event.getInventory().getSize()) {
+                plugin.getRtpManager().handleQueueGuiClick(player, queueHolder, slot);
             }
         } else if (holder instanceof RtpManager.DuelGuiHolder duelHolder) {
             event.setCancelled(true);
-            if (event.getRawSlot() >= 0 && event.getRawSlot() < event.getInventory().getSize()) {
-                plugin.getRtpManager().handleDuelGuiClick(player, duelHolder, event.getRawSlot());
+            if (slot >= 0 && slot < event.getInventory().getSize()) {
+                plugin.getRtpManager().handleDuelGuiClick(player, duelHolder, slot);
             }
         }
     }
