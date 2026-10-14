@@ -76,9 +76,10 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         if (getCommand("rtpreset") != null) getCommand("rtpreset").setExecutor(this);
         if (getCommand("rtp") != null) getCommand("rtp").setExecutor(this);
         if (getCommand("rtpq") != null) getCommand("rtpq").setExecutor(this);
+        if (getCommand("duel") != null) getCommand("duel").setExecutor(this);
 
         startTimerLoop();
-        getLogger().info("RtpResetTimer 1.2.0 (1.21.9 Sprite Edition) enabled!");
+        getLogger().info("RtpResetTimer 1.3.0 (Duel & Sprite Edition) enabled!");
     }
 
     @Override
@@ -164,25 +165,19 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         return profile.remainingSeconds;
     }
 
-    // CHUYỂN ĐỔI HEX + LEGACY + MINIMESSAGE <sprite:...> SANG ADVENTURE COMPONENT
     public Component toComponent(String message) {
         if (message == null || message.isEmpty()) return Component.empty();
 
-        // Tự động chuẩn hóa atlas 1.21.9+ cho item và block nếu viết thiếu tên atlas
         String s = message.replaceAll("<sprite:(?:minecraft:)?item/([^>]+)>", "<sprite:items:item/$1>")
                           .replaceAll("<sprite:(?:minecraft:)?block/([^>]+)>", "<sprite:blocks:block/$1>");
 
-        // Chuyển &#RRGGBB sang <#RRGGBB>
         Matcher matcher = HEX_PATTERN.matcher(s);
         StringBuilder sb = new StringBuilder();
         while (matcher.find()) {
             matcher.appendReplacement(sb, RESET_DECOR + "<#" + matcher.group(1) + ">");
         }
         matcher.appendTail(sb);
-        s = sb.toString();
-
-        // Chuyển mã & và § sang MiniMessage tag
-        s = convertLegacyCodes(s);
+        s = convertLegacyCodes(sb.toString());
 
         return MiniMessage.miniMessage().deserialize(s);
     }
@@ -348,6 +343,15 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
             return true;
         }
 
+        if (command.getName().equalsIgnoreCase("duel")) {
+            if (!(sender instanceof Player player)) {
+                sender.sendMessage("This command is only for players!");
+                return true;
+            }
+            rtpManager.handleDuelCommand(player, args);
+            return true;
+        }
+
         if (!sender.hasPermission("rtpreset.admin")) {
             sender.sendMessage(toComponent(msgAdminNoPermission.replace("{prefix}", prefix)));
             return true;
@@ -405,4 +409,4 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         }
         return true;
     }
-}
+                        }
