@@ -343,9 +343,13 @@ public class RtpManager {
         }
     }
 
+    private boolean isHarmlessPassable(Material m) {
+        return m.isAir() || m == Material.DEAD_BUSH || m == Material.SHORT_GRASS || m == Material.TALL_GRASS || m == Material.FERN;
+    }
+
     private int getSolidSurfaceY(World world, int x, int z) {
         int y = world.getHighestBlockYAt(x, z);
-        while (y > world.getMinHeight() && world.getBlockAt(x, y, z).getType().isAir()) y--;
+        while (y > world.getMinHeight() && isHarmlessPassable(world.getBlockAt(x, y, z).getType())) y--;
         return y;
     }
 
@@ -385,7 +389,8 @@ public class RtpManager {
                 if ((maxY - minY) > maxSlope || !isSafeBlock(world.getBlockAt(cx + dx, sy, cz + dz).getType())) return false;
             }
         }
-        return world.getBlockAt(cx, baseY + 1, cz).getType().isAir() && world.getBlockAt(cx, baseY + 2, cz).getType().isAir();
+        return isHarmlessPassable(world.getBlockAt(cx, baseY + 1, cz).getType())
+                && isHarmlessPassable(world.getBlockAt(cx, baseY + 2, cz).getType());
     }
 
     private boolean isSafeBlock(Material m) {
