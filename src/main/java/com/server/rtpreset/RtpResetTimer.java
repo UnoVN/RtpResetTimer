@@ -404,5 +404,4 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         }
         return true;
     }
-                    }
-                
+}
