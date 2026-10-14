@@ -1,18 +1,17 @@
 # ╔════════════════════════════════════════════════════════════════════════════╗
 # ║                  RTP RESET TIMER & 1V1 QUEUE CONFIGURATION                 ║
-# ║                         Theme: Catppuccin Mocha                            ║
+# ║                     Theme: Catppuccin Mocha (1.21.9+)                      ║
 # ╠════════════════════════════════════════════════════════════════════════════╣
-# ║  CATPPUCCIN MOCHA COLOR PALETTE:                                           ║
-# ║  • Rosewater: &#f5e0dc   • Mauve (Purple): &#cba6f7   • Sky (Cyan): &#89dceb║
-# ║  • Flamingo:  &#f2cdcd   • Red (Urgent):   &#f38ba8   • Sapphire:   &#74c7ec║
-# ║  • Pink:      &#f5c2e7   • Peach (Orange): &#fab387   • Blue:       &#89b4fa║
-# ║  • Green:     &#a6e3a1   • Yellow:         &#f9e2af   • Lavender:   &#b4befe║
-# ║  • Text:      &#cdd6f4   • Subtext (Gray): &#a6adc8   • Overlay:    &#6c7086║
-# ╠════════════════════════════════════════════════════════════════════════════╣
-# ║  27-SLOT GUI LAYOUT REFERENCE (3 ROWS):                                    ║
-# ║  Row 1: [ 0] [ 1] [ 2] [ 3] [ 4] [ 5] [ 6] [ 7] [ 8]                       ║
-# ║  Row 2: [ 9] [10] [11] [12] [13] [14] [15] [16] [17]  <-- Center Row       ║
-# ║  Row 3: [18] [19] [20] [21] [22] [23] [24] [25] [26]                       ║
+# ║  1.21.9 SPRITE OBJECT COMPONENT REFERENCE:                                 ║
+# ║  Wrap in <white>...</white> to keep original item texture colors!          ║
+# ║  • Crossbow:      <white><sprite:item/crossbow_standby></white>            ║
+# ║  • Loaded C-Bow:  <white><sprite:item/crossbow_arrow></white>              ║
+# ║  • Bow:           <white><sprite:item/bow></white>                         ║
+# ║  • TNT Minecart:  <white><sprite:item/tnt_minecart></white>                ║
+# ║  • End Crystal:   <white><sprite:item/end_crystal></white>                 ║
+# ║  • Totem:         <white><sprite:item/totem_of_undying></white>            ║
+# ║  • Sword:         <white><sprite:item/netherite_sword></white>             ║
+# ║  • Sand Block:    <white><sprite:block/sand></white>                       ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
 
@@ -35,7 +34,7 @@ worlds:
   desert:
     target-world: "rtpdesert"
     display-name: "RTP Desert"
-    reset-interval-seconds: 1800        # 1800s = 30 minutes
+    reset-interval-seconds: 1800
 
     worldborder:
       center-x: 420.0
@@ -50,7 +49,6 @@ worlds:
 
 # ==============================================================================
 # [3] SOLO RANDOM TELEPORT GUI (/rtp)
-# Note: You can use Nexo/Oraxen/IA tags like "<glyph:sand>" in 'icon'
 # ==============================================================================
 rtp-menu:
   title: "&#89b4fa&lRANDOM TELEPORT"
@@ -65,8 +63,8 @@ rtp-menu:
     desert:
       slot: 13
       material: "SAND"
-      icon: "&#f9e2af🌵"
-      name: "&#89dceb&lRTP Desert"
+      icon: "<white><sprite:block/sand></white>"
+      name: "{icon} &#89dceb&lRTP Desert"
       lore:
         - "&#a6adc8Free-for-all combat arena"
         - "&#a6adc8Safe & flat terrain detection"
@@ -81,7 +79,6 @@ rtp-menu:
 
 # ==============================================================================
 # [4] 1V1 BATTLE QUEUE GUI (/rtpq or /rtpqueue)
-# Note: In 'icon', you can use "<glyph:crossbow>" or unicode symbols.
 # ==============================================================================
 rtpq-menu:
   title: "&#fab387&l1V1 BATTLE QUEUE"
@@ -89,10 +86,9 @@ rtpq-menu:
   countdown-seconds: 5
   player-gap: 8
 
-  # Auto-leave queue if no opponent joins within timeout-seconds
   queue-timeout:
     enabled: true
-    timeout-seconds: 120                # 120s = 2 minutes
+    timeout-seconds: 120
 
   filler:
     enabled: true
@@ -110,8 +106,8 @@ rtpq-menu:
     ht_kit:
       slot: 11
       material: "CROSSBOW"
-      icon: "&#fab387⚔"
-      name: "&#fab387&lHT KIT (1v1)"
+      icon: "<white><sprite:item/crossbow_standby></white>"
+      name: "{icon} &#fab387&lHT KIT (1v1)"
       mode-display: "HT KIT"
       map-display: "RTP Desert"
       lore:
@@ -129,8 +125,8 @@ rtpq-menu:
     lt_kit:
       slot: 15
       material: "BOW"
-      icon: "&#89dceb🏹"
-      name: "&#89dceb&lLT KIT (1v1)"
+      icon: "<white><sprite:item/bow></white>"
+      name: "{icon} &#89dceb&lLT KIT (1v1)"
       mode-display: "LT KIT"
       map-display: "RTP Desert"
       lore:
@@ -157,7 +153,6 @@ rtp-settings:
 
 # ==============================================================================
 # [6] MESSAGES & BROADCASTS (100% English - Catppuccin Mocha)
-# Available Placeholders: {prefix}, {icon}, {display_name}, {mode}, {map}, {time}
 # ==============================================================================
 messages:
   prefix: "<glyph:warning_blue> "
@@ -179,34 +174,29 @@ messages:
     no-worlds: "{prefix}&#f38ba8No worlds configured in config.yml!"
 
 rtp-messages:
-  # Queue Join / Leave / Timeout Messages
   joined-queue: "{prefix}{icon} &#89dcebYou joined the &#fab387{mode} &#89dcebqueue (&#a6e3a1{current}/2&#89dceb)!"
   left-queue: "{prefix}{icon} &#f38ba8You left the &#fab387{mode} &#f38ba8queue."
   not-in-queue: "{prefix}&#f38ba8You are not currently in any queue."
   already-in-other-queue: "{prefix}&#f38ba8You are already in another queue! Please leave it first."
   queue-broadcast: "{prefix}{icon} &#89b4faPlayer &#cba6f7{player} &#89b4fais queuing for &#fab387{mode} &#89b4fa(&#a6e3a1{current}/2&#89b4fa)! Use &#f9e2af/rtpq"
 
-  # Live Queue Waiting Actionbar & Timeout Feedback
-  queue-waiting-actionbar: "{icon} &#89dcebQueue: &#fab387{mode} &8| &#89dcebTime: &#a6e3a1{elapsed} &8| &#a6adc8/rtpq leave"
+  queue-waiting-actionbar: "{icon} &#89dcebQueue: &#fab387{mode} &8| &#89dcebElapsed: &#a6e3a1{elapsed} &8| &#a6adc8/rtpq leave"
   queue-timeout: "{prefix}{icon} &#f38ba8You were removed from the &#fab387{mode} &#f38ba8queue due to inactivity ({timeout})."
-  queue-timeout-actionbar: "&#f38ba8&lQUEUE TIMED OUT!"
+  queue-timeout-actionbar: "{icon} &#f38ba8&lQUEUE TIMED OUT!"
 
-  # Global 1v1 Match Found Broadcast
   match-found-broadcast:
     - ""
     - " &8» {icon} &#fab387&l1V1 MATCH FOUND"
     - " &8» &#cba6f7{player1} &#f38ba8&lVS &#cba6f7{player2}"
-    - " &8» &#89dcebMode: &#b4befe{mode} &8| &#89dcebMap: &#b4befe{map}"
+    - " &8» &#89dcebMode: {icon} &#b4befe{mode} &8| &#89dcebMap: &#b4befe{map}"
     - ""
 
-  # Match Countdown & Fight Titles
   match-actionbar: "{icon} &#89b4faOpponent: {opponent_prefix}&#cdd6f4{opponent_name} &8| &#89dcebStarting in: &#fab387{time}s"
-  match-countdown-subtitle: "&#cdd6f4Prepare for battle..."
+  match-countdown-subtitle: "{icon} &#cdd6f4Prepare for battle..."
   match-started-title: "&#a6e3a1&lFIGHT!"
-  match-started-subtitle: "&#cdd6f4Good luck!"
+  match-started-subtitle: "{icon} &#cdd6f4Good luck!"
 
-  # Teleport Feedback
-  teleporting-rtp: "{prefix}{icon} &#89dcebFinding a safe location in &#fab387{display_name}&#89dceb..."
+  teleporting-rtp: "{prefix}{icon} &#89dcebFinding a safe location in &#fab387{map}&#89dceb..."
   teleport-success: "{prefix}{icon} &#a6e3a1Teleported to &#89dcebX: {x}, Y: {y}, Z: {z}&#a6e3a1!"
   safe-loc-not-found: "{prefix}&#f38ba8Could not find a safe flat location, please try again!"
   
