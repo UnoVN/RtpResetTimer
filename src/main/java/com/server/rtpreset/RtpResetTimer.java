@@ -1,6 +1,7 @@
 package com.server.rtpreset;
 
-import net.md_5.bungee.api.ChatColor;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -19,7 +20,6 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-@SuppressWarnings("deprecation")
 public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
 
     public static class WorldProfile {
@@ -58,6 +58,7 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
     private BukkitTask mainTimerTask;
     private RtpManager rtpManager;
     private static final Pattern HEX_PATTERN = Pattern.compile("&#([A-Fa-f0-9]{6});?");
+    private static final String RESET_DECOR = "<!bold><!italic><!underlined><!strikethrough><!obfuscated>";
 
     @Override
     public void onEnable() {
@@ -77,7 +78,7 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         if (getCommand("rtpq") != null) getCommand("rtpq").setExecutor(this);
 
         startTimerLoop();
-        getLogger().info("RtpResetTimer 1.2.0 enabled successfully!");
+        getLogger().info("RtpResetTimer 1.2.0 (1.21.9 Sprite Edition) enabled!");
     }
 
     @Override
@@ -163,28 +164,81 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         return profile.remainingSeconds;
     }
 
-    public String color(String message) {
-        if (message == null) return "";
-        Matcher matcher = HEX_PATTERN.matcher(message);
-        StringBuffer buffer = new StringBuffer();
+    // CHUYỂN ĐỔI HEX + LEGACY + MINIMESSAGE <sprite:...> SANG ADVENTURE COMPONENT
+    public Component toComponent(String message) {
+        if (message == null || message.isEmpty()) return Component.empty();
+
+        // Chuẩn hóa <sprite:minecraft:item/...> về <sprite:item/...>
+        String s = message.replaceAll("<sprite:minecraft:([^>]+)>", "<sprite:$1>");
+
+        // Chuyển &#RRGGBB sang <#RRGGBB>
+        Matcher matcher = HEX_PATTERN.matcher(s);
+        StringBuilder sb = new StringBuilder();
         while (matcher.find()) {
-            matcher.appendReplacement(buffer, ChatColor.of("#" + matcher.group(1)).toString());
+            matcher.appendReplacement(sb, RESET_DECOR + "<#" + matcher.group(1) + ">");
         }
-        matcher.appendTail(buffer);
-        return ChatColor.translateAlternateColorCodes('&', buffer.toString());
+        matcher.appendTail(sb);
+        s = sb.toString();
+
+        // Chuyển mã & và § (từ LuckPerms prefix) sang MiniMessage tag
+        s = convertLegacyCodes(s);
+
+        return MiniMessage.miniMessage().deserialize(s);
     }
 
-    private String formatMessage(String template, WorldProfile profile, String timeStr) {
+    private String convertLegacyCodes(String text) {
+        StringBuilder out = new StringBuilder(text.length() + 32);
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if ((c == '&' || c == '§') && i + 1 < text.length()) {
+                char next = Character.toLowerCase(text.charAt(i + 1));
+                String rep = switch (next) {
+                    case '0' -> RESET_DECOR + "<black>";
+                    case '1' -> RESET_DECOR + "<dark_blue>";
+                    case '2' -> RESET_DECOR + "<dark_green>";
+                    case '3' -> RESET_DECOR + "<dark_aqua>";
+                    case '4' -> RESET_DECOR + "<dark_red>";
+                    case '5' -> RESET_DECOR + "<dark_purple>";
+                    case '6' -> RESET_DECOR + "<gold>";
+                    case '7' -> RESET_DECOR + "<gray>";
+                    case '8' -> RESET_DECOR + "<dark_gray>";
+                    case '9' -> RESET_DECOR + "<blue>";
+                    case 'a' -> RESET_DECOR + "<green>";
+                    case 'b' -> RESET_DECOR + "<aqua>";
+                    case 'c' -> RESET_DECOR + "<red>";
+                    case 'd' -> RESET_DECOR + "<light_purple>";
+                    case 'e' -> RESET_DECOR + "<yellow>";
+                    case 'f' -> RESET_DECOR + "<white>";
+                    case 'l' -> "<bold>";
+                    case 'm' -> "<strikethrough>";
+                    case 'n' -> "<underlined>";
+                    case 'o' -> "<italic>";
+                    case 'k' -> "<obfuscated>";
+                    case 'r' -> "<reset>";
+                    default -> null;
+                };
+                if (rep != null) {
+                    out.append(rep);
+                    i++;
+                    continue;
+                }
+            }
+            out.append(c);
+        }
+        return out.toString();
+    }
+
+    private Component formatMessage(String template, WorldProfile profile, String timeStr) {
         String res = template.replace("{prefix}", prefix);
         if (profile != null) {
             res = res.replace("{display_name}", profile.displayName).replace("{world}", profile.targetWorld);
         }
         if (timeStr != null) res = res.replace("{time}", timeStr);
-        return color(res);
+        return toComponent(res);
     }
 
-    private void broadcast(String formattedMessage) {
-        Bukkit.broadcastMessage(formattedMessage);
+    private void broadcast(Component formattedMessage) {
+        Bukkit.broadcast(formattedMessage);
     }
 
     private String formatDuration(int totalSeconds) {
@@ -294,20 +348,20 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         }
 
         if (!sender.hasPermission("rtpreset.admin")) {
-            sender.sendMessage(color(msgAdminNoPermission.replace("{prefix}", prefix)));
+            sender.sendMessage(toComponent(msgAdminNoPermission.replace("{prefix}", prefix)));
             return true;
         }
 
         if (args.length > 0 && args[0].equalsIgnoreCase("reload")) {
             loadConfiguration();
             startTimerLoop();
-            sender.sendMessage(color(msgAdminReloadSuccess.replace("{prefix}", prefix)
+            sender.sendMessage(toComponent(msgAdminReloadSuccess.replace("{prefix}", prefix)
                     .replace("{count}", String.valueOf(worldProfiles.size()))));
             return true;
         }
 
         if (args.length > 0 && args[0].equalsIgnoreCase("all")) {
-            sender.sendMessage(color(msgAdminManualResetAll.replace("{prefix}", prefix)));
+            sender.sendMessage(toComponent(msgAdminManualResetAll.replace("{prefix}", prefix)));
             for (WorldProfile p : worldProfiles.values()) {
                 p.remainingSeconds = p.resetIntervalSeconds;
                 performWorldReset(p);
@@ -328,12 +382,12 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
             }
 
             if (profile != null) {
-                sender.sendMessage(color(msgAdminManualResetSingle.replace("{prefix}", prefix)
+                sender.sendMessage(toComponent(msgAdminManualResetSingle.replace("{prefix}", prefix)
                         .replace("{display_name}", profile.displayName).replace("{world}", profile.targetWorld)));
                 profile.remainingSeconds = profile.resetIntervalSeconds;
                 performWorldReset(profile);
             } else {
-                sender.sendMessage(color(msgAdminWorldNotFound.replace("{prefix}", prefix)
+                sender.sendMessage(toComponent(msgAdminWorldNotFound.replace("{prefix}", prefix)
                         .replace("{available}", String.join(", ", worldProfiles.keySet()))));
             }
             return true;
@@ -341,13 +395,14 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
 
         if (defaultWorldKey != null) {
             WorldProfile defProfile = worldProfiles.get(defaultWorldKey);
-            sender.sendMessage(color(msgAdminManualResetSingle.replace("{prefix}", prefix)
+            sender.sendMessage(toComponent(msgAdminManualResetSingle.replace("{prefix}", prefix)
                     .replace("{display_name}", defProfile.displayName).replace("{world}", defProfile.targetWorld)));
             defProfile.remainingSeconds = defProfile.resetIntervalSeconds;
             performWorldReset(defProfile);
         } else {
-            sender.sendMessage(color(msgAdminNoWorlds.replace("{prefix}", prefix)));
+            sender.sendMessage(toComponent(msgAdminNoWorlds.replace("{prefix}", prefix)));
         }
         return true;
     }
-}
+                    }
+                
