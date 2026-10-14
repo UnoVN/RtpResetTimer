@@ -7,12 +7,15 @@ import org.bukkit.*;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
+import org.jetbrains.annotations.NotNull;
 
 import java.time.Duration;
 import java.util.*;
@@ -28,11 +31,29 @@ public class RtpManager {
         public List<String> lore;
     }
 
+    public static class DuelGuiHolder implements InventoryHolder {
+        public final UUID targetUuid;
+        public String selectedModeKey;
+
+        public DuelGuiHolder(UUID targetUuid, String selectedModeKey) {
+            this.targetUuid = targetUuid;
+            this.selectedModeKey = selectedModeKey;
+        }
+
+        @Override
+        public @NotNull Inventory getInventory() {
+            return null;
+        }
+    }
+
+    public record DuelRequest(UUID senderUuid, String modeKey, long timestamp) {}
+
     private final RtpResetTimer plugin;
     private final Map<String, RtpItem> rtpItems = new LinkedHashMap<>();
     private final Map<String, RtpItem> rtpqItems = new LinkedHashMap<>();
     private final Map<String, List<UUID>> queueMap = new ConcurrentHashMap<>();
     private final Map<UUID, Long> queueJoinTime = new ConcurrentHashMap<>();
+    private final Map<UUID, Map<UUID, DuelRequest>> duelRequests = new ConcurrentHashMap<>();
     private final Set<UUID> inCountdown = ConcurrentHashMap.newKeySet();
     private BukkitTask queueMonitorTask;
 
@@ -48,6 +69,7 @@ public class RtpManager {
         }
         queueMap.clear();
         queueJoinTime.clear();
+        duelRequests.clear();
         inCountdown.clear();
     }
 
@@ -107,9 +129,7 @@ public class RtpManager {
                 for (Map.Entry<String, List<UUID>> entry : queueMap.entrySet()) {
                     RtpItem item = rtpqItems.get(entry.getKey());
                     if (item == null) continue;
-                    List<UUID> list = entry.getValue();
-
-                    Iterator<UUID> it = list.iterator();
+                    Iterator<UUID> it = entry.getValue().iterator();
                     while (it.hasNext()) {
                         UUID uuid = it.next();
                         Player p = Bukkit.getPlayer(uuid);
@@ -118,27 +138,18 @@ public class RtpManager {
                             queueJoinTime.remove(uuid);
                             continue;
                         }
-
-                        long joinedAt = queueJoinTime.getOrDefault(uuid, now);
-                        int elapsedSec = (int) ((now - joinedAt) / 1000L);
-
+                        int elapsedSec = (int) ((now - queueJoinTime.getOrDefault(uuid, now)) / 1000L);
                         if (timeoutEnabled && elapsedSec >= maxTimeoutSec) {
                             it.remove();
                             queueJoinTime.remove(uuid);
-                            String timeoutFmt = String.format("%02d:%02d", maxTimeoutSec / 60, maxTimeoutSec % 60);
-                            p.sendMessage(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.queue-timeout",
-                                    "{prefix}&#f38ba8You were removed from the {icon} &#fab387{mode} &#f38ba8queue!"), item).replace("{timeout}", timeoutFmt)));
-                            p.sendActionBar(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.queue-timeout-actionbar",
-                                    "&#f38ba8&lQUEUE TIMED OUT! &8({icon} &#fab387{mode}&8)"), item)));
+                            String tf = String.format("%02d:%02d", maxTimeoutSec / 60, maxTimeoutSec % 60);
+                            p.sendMessage(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.queue-timeout", "{prefix}&#f38ba8Queue timed out!"), item).replace("{timeout}", tf)));
+                            p.sendActionBar(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.queue-timeout-actionbar", "&#f38ba8&lQUEUE TIMED OUT!"), item)));
                             p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 0.8f);
                             continue;
                         }
-
                         String elapsedStr = String.format("%02d:%02d", elapsedSec / 60, elapsedSec % 60);
-                        String ab = applyPlaceholders(plugin.getMsg("rtp-messages.queue-waiting-actionbar",
-                                "&#89dcebQueue: {icon} &#fab387{mode} &8| &#89dcebElapsed: &#a6e3a1{elapsed}"), item)
-                                .replace("{elapsed}", elapsedStr);
-                        p.sendActionBar(plugin.toComponent(ab));
+                        p.sendActionBar(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.queue-waiting-actionbar", "&#89dcebQueue: {icon} &#fab387{mode} &8| &#a6e3a1{elapsed}"), item).replace("{elapsed}", elapsedStr)));
                     }
                 }
             }
@@ -146,12 +157,23 @@ public class RtpManager {
     }
 
     private String applyPlaceholders(String text, RtpItem item) {
-        if (text == null || item == null) return "";
+        if (text == null || item == null) return text != null ? text : "";
         return text.replace("{display_name}", item.name)
                    .replace("{mode}", item.modeDisplay)
                    .replace("{map}", item.mapDisplay)
                    .replace("{world}", item.worldName)
                    .replace("{icon}", item.icon);
+    }
+
+    private String applyDuelPlaceholders(String text, Player sender, Player target, RtpItem item) {
+        String s = applyPlaceholders(text, item);
+        if (sender != null) {
+            s = s.replace("{sender_name}", sender.getName()).replace("{sender_prefix}", getPlayerPrefix(sender));
+        }
+        if (target != null) {
+            s = s.replace("{target_name}", target.getName()).replace("{target_prefix}", getPlayerPrefix(target)).replace("{target}", target.getName());
+        }
+        return s;
     }
 
     private void applyFiller(Inventory inv, String menuPath) {
@@ -177,11 +199,9 @@ public class RtpManager {
             ItemMeta meta = is.getItemMeta();
             if (meta != null) {
                 meta.displayName(plugin.toComponent(applyPlaceholders(item.name, item)).decoration(TextDecoration.ITALIC, false));
-                List<Component> coloredLore = new ArrayList<>();
-                for (String l : item.lore) {
-                    coloredLore.add(plugin.toComponent(applyPlaceholders(l, item)).decoration(TextDecoration.ITALIC, false));
-                }
-                meta.lore(coloredLore);
+                List<Component> lore = new ArrayList<>();
+                for (String l : item.lore) lore.add(plugin.toComponent(applyPlaceholders(l, item)).decoration(TextDecoration.ITALIC, false));
+                meta.lore(lore);
                 meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
                 is.setItemMeta(meta);
             }
@@ -196,8 +216,8 @@ public class RtpManager {
         Inventory inv = Bukkit.createInventory(new RtpQueueGuiHolder(), size, title);
         applyFiller(inv, "rtpq-menu");
 
-        String actionJoin = plugin.getConfig().getString("rtpq-menu.action-join", "<glyph:left_click> &#a6e3a1Click to join queue");
-        String actionLeave = plugin.getConfig().getString("rtpq-menu.action-leave", "<glyph:left_click> &#f38ba8Click to leave queue");
+        String actJoin = plugin.getConfig().getString("rtpq-menu.action-join", "<glyph:left_click> &#a6e3a1Click to join queue");
+        String actLeave = plugin.getConfig().getString("rtpq-menu.action-leave", "<glyph:left_click> &#f38ba8Click to leave queue");
 
         for (RtpItem item : rtpqItems.values()) {
             ItemStack is = new ItemStack(item.material);
@@ -205,23 +225,216 @@ public class RtpManager {
             if (meta != null) {
                 meta.displayName(plugin.toComponent(applyPlaceholders(item.name, item)).decoration(TextDecoration.ITALIC, false));
                 List<UUID> q = queueMap.getOrDefault(item.key, Collections.emptyList());
-                boolean inThisQueue = q.contains(player.getUniqueId());
-                String clickActionText = inThisQueue ? actionLeave : actionJoin;
-
-                List<Component> coloredLore = new ArrayList<>();
+                String clickAct = q.contains(player.getUniqueId()) ? actLeave : actJoin;
+                List<Component> lore = new ArrayList<>();
                 for (String l : item.lore) {
-                    String line = applyPlaceholders(l, item)
-                            .replace("{current_queue}", String.valueOf(q.size()))
-                            .replace("{click_action}", clickActionText);
-                    coloredLore.add(plugin.toComponent(line).decoration(TextDecoration.ITALIC, false));
+                    lore.add(plugin.toComponent(applyPlaceholders(l, item).replace("{current_queue}", String.valueOf(q.size())).replace("{click_action}", clickAct)).decoration(TextDecoration.ITALIC, false));
                 }
-                meta.lore(coloredLore);
+                meta.lore(lore);
                 meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
                 is.setItemMeta(meta);
             }
             if (item.slot >= 0 && item.slot < size) inv.setItem(item.slot, is);
         }
         player.openInventory(inv);
+    }
+
+    // MỞ MENU DUEL VỚI ĐẦU NGƯỜI CHƠI, CHỌN MODE VÀ NÚT GỬI DUEL
+    public void openDuelGui(Player sender, Player target, String modeKey) {
+        if (rtpqItems.isEmpty()) return;
+        if (modeKey == null || !rtpqItems.containsKey(modeKey)) {
+            modeKey = rtpqItems.keySet().iterator().next();
+        }
+        RtpItem selectedItem = rtpqItems.get(modeKey);
+
+        String rawTitle = applyDuelPlaceholders(plugin.getConfig().getString("duel-menu.title", "&#cba6f7&lDUEL: &#cdd6f4{target_name}"), sender, target, selectedItem);
+        int size = plugin.getConfig().getInt("duel-menu.size", 27);
+        Inventory inv = Bukkit.createInventory(new DuelGuiHolder(target.getUniqueId(), modeKey), size, plugin.toComponent(rawTitle));
+        applyFiller(inv, "duel-menu");
+
+        // 1. Đầu đối thủ (Target Player Head)
+        int headSlot = plugin.getConfig().getInt("duel-menu.target-head.slot", 4);
+        ItemStack head = new ItemStack(Material.PLAYER_HEAD);
+        SkullMeta skullMeta = (SkullMeta) head.getItemMeta();
+        if (skullMeta != null) {
+            skullMeta.setOwningPlayer(target);
+            String headName = applyDuelPlaceholders(plugin.getConfig().getString("duel-menu.target-head.name", "&#cba6f7&lOPPONENT INFO"), sender, target, selectedItem);
+            skullMeta.displayName(plugin.toComponent(headName).decoration(TextDecoration.ITALIC, false));
+            List<Component> hLore = new ArrayList<>();
+            for (String l : plugin.getConfig().getStringList("duel-menu.target-head.lore")) {
+                hLore.add(plugin.toComponent(applyDuelPlaceholders(l, sender, target, selectedItem)).decoration(TextDecoration.ITALIC, false));
+            }
+            skullMeta.lore(hLore);
+            head.setItemMeta(skullMeta);
+        }
+        if (headSlot >= 0 && headSlot < size) inv.setItem(headSlot, head);
+
+        // 2. Các nút chọn Mode (HT KIT, LT KIT)
+        String statusSel = plugin.getConfig().getString("duel-menu.status-selected", "&#a6e3a1✔ Currently Selected");
+        String statusUnsel = plugin.getConfig().getString("duel-menu.status-unselected", "<glyph:left_click> &#fab387Click to select this mode");
+        List<String> modeLoreCfg = plugin.getConfig().getStringList("duel-menu.mode-lore");
+
+        for (RtpItem item : rtpqItems.values()) {
+            ItemStack is = new ItemStack(item.material);
+            ItemMeta meta = is.getItemMeta();
+            if (meta != null) {
+                boolean isSel = item.key.equals(modeKey);
+                meta.displayName(plugin.toComponent(applyPlaceholders(item.name, item)).decoration(TextDecoration.ITALIC, false));
+                meta.setEnchantmentGlintOverride(isSel);
+                List<Component> mLore = new ArrayList<>();
+                for (String l : modeLoreCfg) {
+                    String line = applyDuelPlaceholders(l, sender, target, item).replace("{duel_status}", isSel ? statusSel : statusUnsel);
+                    mLore.add(plugin.toComponent(line).decoration(TextDecoration.ITALIC, false));
+                }
+                meta.lore(mLore);
+                meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
+                is.setItemMeta(meta);
+            }
+            if (item.slot >= 0 && item.slot < size) inv.setItem(item.slot, is);
+        }
+
+        // 3. Nút Gửi lời mời Duel (Send Button)
+        int sendSlot = plugin.getConfig().getInt("duel-menu.send-button.slot", 22);
+        Material sendMat = Material.matchMaterial(plugin.getConfig().getString("duel-menu.send-button.material", "LIME_CONCRETE").toUpperCase());
+        ItemStack sendBtn = new ItemStack(sendMat != null ? sendMat : Material.LIME_CONCRETE);
+        ItemMeta sendMeta = sendBtn.getItemMeta();
+        if (sendMeta != null) {
+            String sName = applyDuelPlaceholders(plugin.getConfig().getString("duel-menu.send-button.name", "&#a6e3a1&lSEND DUEL REQUEST"), sender, target, selectedItem);
+            sendMeta.displayName(plugin.toComponent(sName).decoration(TextDecoration.ITALIC, false));
+            List<Component> sLore = new ArrayList<>();
+            for (String l : plugin.getConfig().getStringList("duel-menu.send-button.lore")) {
+                sLore.add(plugin.toComponent(applyDuelPlaceholders(l, sender, target, selectedItem)).decoration(TextDecoration.ITALIC, false));
+            }
+            sendMeta.lore(sLore);
+            sendBtn.setItemMeta(sendMeta);
+        }
+        if (sendSlot >= 0 && sendSlot < size) inv.setItem(sendSlot, sendBtn);
+
+        sender.openInventory(inv);
+    }
+
+    public void handleDuelGuiClick(Player sender, DuelGuiHolder holder, int slot) {
+        Player target = Bukkit.getPlayer(holder.targetUuid);
+        if (target == null || !target.isOnline()) {
+            sender.closeInventory();
+            sender.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.duel-player-not-found", "{prefix}&#f38ba8Player is offline!")));
+            return;
+        }
+
+        for (RtpItem item : rtpqItems.values()) {
+            if (item.slot == slot) {
+                sender.playSound(sender.getLocation(), Sound.UI_BUTTON_CLICK, 1f, 1.2f);
+                openDuelGui(sender, target, item.key);
+                return;
+            }
+        }
+
+        int sendSlot = plugin.getConfig().getInt("duel-menu.send-button.slot", 22);
+        if (slot == sendSlot) {
+            sender.closeInventory();
+            RtpItem selected = rtpqItems.get(holder.selectedModeKey);
+            if (selected != null) sendDuelRequest(sender, target, selected);
+        }
+    }
+
+    public void handleDuelCommand(Player player, String[] args) {
+        if (args.length == 0) {
+            player.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.duel-usage", "{prefix}&#89dcebUsage: /duel <player>")));
+            return;
+        }
+
+        if (args[0].equalsIgnoreCase("accept") || args[0].equalsIgnoreCase("deny")) {
+            if (args.length < 2) {
+                player.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.duel-usage", "{prefix}&#89dcebUsage: /duel <accept|deny> <player>")));
+                return;
+            }
+            Player challenger = Bukkit.getPlayerExact(args[1]);
+            if (challenger == null || !challenger.isOnline()) {
+                player.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.duel-player-not-found", "{prefix}&#f38ba8Player not found or is offline!")));
+                return;
+            }
+            respondDuel(player, challenger, args[0].equalsIgnoreCase("accept"));
+            return;
+        }
+
+        Player target = Bukkit.getPlayerExact(args[0]);
+        if (target == null || !target.isOnline()) {
+            player.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.duel-player-not-found", "{prefix}&#f38ba8Player not found or is offline!")));
+            return;
+        }
+        if (target.getUniqueId().equals(player.getUniqueId())) {
+            player.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.duel-self", "{prefix}&#f38ba8You cannot duel yourself!")));
+            return;
+        }
+        if (inCountdown.contains(player.getUniqueId()) || inCountdown.contains(target.getUniqueId())) {
+            player.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.duel-busy", "{prefix}&#f38ba8That player is currently starting a match!")));
+            return;
+        }
+        openDuelGui(player, target, null);
+    }
+
+    private void sendDuelRequest(Player sender, Player target, RtpItem item) {
+        if (inCountdown.contains(sender.getUniqueId()) || inCountdown.contains(target.getUniqueId())) {
+            sender.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.duel-busy", "{prefix}&#f38ba8Player is busy!")));
+            return;
+        }
+
+        int expireSec = plugin.getConfig().getInt("duel-menu.request-expire-seconds", 60);
+        long now = System.currentTimeMillis();
+        Map<UUID, DuelRequest> targetReqs = duelRequests.computeIfAbsent(target.getUniqueId(), k -> new ConcurrentHashMap<>());
+
+        DuelRequest existing = targetReqs.get(sender.getUniqueId());
+        if (existing != null && (now - existing.timestamp()) < expireSec * 1000L) {
+            sender.sendMessage(plugin.toComponent(applyDuelPlaceholders(plugin.getMsg("rtp-messages.duel-already-sent", "{prefix}&#f38ba8Request already sent!"), sender, target, item)));
+            return;
+        }
+
+        targetReqs.put(sender.getUniqueId(), new DuelRequest(sender.getUniqueId(), item.key, now));
+        sender.sendMessage(plugin.toComponent(applyDuelPlaceholders(plugin.getMsg("rtp-messages.duel-sent", "{prefix}&#a6e3a1Sent duel request!"), sender, target, item)));
+        sender.playSound(sender.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1.2f);
+
+        for (String line : plugin.getConfig().getStringList("rtp-messages.duel-received")) {
+            target.sendMessage(plugin.toComponent(applyDuelPlaceholders(line, sender, target, item)));
+        }
+        target.playSound(target.getLocation(), Sound.BLOCK_NOTE_BLOCK_BELL, 1f, 1.2f);
+    }
+
+    private void respondDuel(Player target, Player sender, boolean accept) {
+        Map<UUID, DuelRequest> targetReqs = duelRequests.get(target.getUniqueId());
+        DuelRequest req = targetReqs != null ? targetReqs.remove(sender.getUniqueId()) : null;
+        int expireSec = plugin.getConfig().getInt("duel-menu.request-expire-seconds", 60);
+
+        if (req == null || (System.currentTimeMillis() - req.timestamp()) > expireSec * 1000L) {
+            target.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.duel-no-pending", "{prefix}&#f38ba8No pending duel request!").replace("{sender}", sender.getName())));
+            return;
+        }
+
+        RtpItem item = rtpqItems.get(req.modeKey());
+        if (item == null) return;
+
+        if (!accept) {
+            target.sendMessage(plugin.toComponent(applyDuelPlaceholders(plugin.getMsg("rtp-messages.duel-denied-target", "{prefix}&#f38ba8Declined duel."), sender, target, item)));
+            sender.sendMessage(plugin.toComponent(applyDuelPlaceholders(plugin.getMsg("rtp-messages.duel-denied-sender", "{prefix}&#f38ba8Duel declined."), sender, target, item)));
+            return;
+        }
+
+        if (inCountdown.contains(sender.getUniqueId()) || inCountdown.contains(target.getUniqueId())) {
+            target.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.duel-busy", "{prefix}&#f38ba8Player is busy!")));
+            return;
+        }
+
+        // Xóa khỏi mọi hàng đợi trước khi vào trận Duel
+        for (List<UUID> list : queueMap.values()) {
+            list.remove(sender.getUniqueId());
+            list.remove(target.getUniqueId());
+        }
+        queueJoinTime.remove(sender.getUniqueId());
+        queueJoinTime.remove(target.getUniqueId());
+
+        target.sendMessage(plugin.toComponent(applyDuelPlaceholders(plugin.getMsg("rtp-messages.duel-accepted-target", "{prefix}&#a6e3a1Accepted duel!"), sender, target, item)));
+        sender.sendMessage(plugin.toComponent(applyDuelPlaceholders(plugin.getMsg("rtp-messages.duel-accepted-sender", "{prefix}&#a6e3a1Duel accepted!"), sender, target, item)));
+
+        startMatchmaking(sender, target, item);
     }
 
     public void handleRtpClick(Player player, int slot) {
@@ -250,8 +463,7 @@ public class RtpManager {
         for (Map.Entry<String, List<UUID>> entry : queueMap.entrySet()) {
             if (entry.getValue().remove(uuid)) {
                 RtpItem item = rtpqItems.get(entry.getKey());
-                String msg = applyPlaceholders(plugin.getMsg("rtp-messages.left-queue", "{prefix}&#f38ba8You left the {icon} &#fab387{mode} &#f38ba8queue."), item);
-                player.sendMessage(plugin.toComponent(msg));
+                player.sendMessage(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.left-queue", "{prefix}&#f38ba8You left the queue."), item)));
                 return true;
             }
         }
@@ -262,6 +474,7 @@ public class RtpManager {
     public void removePlayerFromAllQueues(UUID uuid) {
         for (List<UUID> list : queueMap.values()) list.remove(uuid);
         queueJoinTime.remove(uuid);
+        duelRequests.remove(uuid);
         inCountdown.remove(uuid);
     }
 
@@ -274,7 +487,7 @@ public class RtpManager {
         if (q.contains(uuid)) {
             q.remove(uuid);
             queueJoinTime.remove(uuid);
-            player.sendMessage(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.left-queue", "{prefix}&#f38ba8You left the {icon} &#fab387{mode} &#f38ba8queue."), item)));
+            player.sendMessage(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.left-queue", "{prefix}&#f38ba8You left the queue."), item)));
             return;
         }
 
@@ -287,34 +500,22 @@ public class RtpManager {
 
         q.add(uuid);
         queueJoinTime.put(uuid, System.currentTimeMillis());
-
-        player.sendMessage(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.joined-queue", "{prefix}&#89dcebYou joined the {icon} &#fab387{mode} &#89dcebqueue ({current}/2)!"), item)
-                .replace("{current}", String.valueOf(q.size()))));
+        player.sendMessage(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.joined-queue", "{prefix}&#89dcebJoined queue!"), item).replace("{current}", String.valueOf(q.size()))));
 
         if (q.size() == 1) {
-            Bukkit.broadcast(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.queue-broadcast", "{prefix}&#89b4faPlayer {player} is queuing for {icon} &#fab387{mode} (1/2)!"), item)
-                    .replace("{player}", player.getName()).replace("{current}", "1")));
+            Bukkit.broadcast(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.queue-broadcast", "{prefix}&#89b4fa{player} is queuing!"), item).replace("{player}", player.getName()).replace("{current}", "1")));
         }
 
         if (q.size() >= 2) {
-            UUID u1 = q.remove(0);
-            UUID u2 = q.remove(0);
+            UUID u1 = q.remove(0), u2 = q.remove(0);
             queueJoinTime.remove(u1);
             queueJoinTime.remove(u2);
-
-            Player p1 = Bukkit.getPlayer(u1);
-            Player p2 = Bukkit.getPlayer(u2);
+            Player p1 = Bukkit.getPlayer(u1), p2 = Bukkit.getPlayer(u2);
             if (p1 != null && p2 != null && p1.isOnline() && p2.isOnline()) {
                 startMatchmaking(p1, p2, item);
             } else {
-                if (p1 != null && p1.isOnline()) {
-                    q.add(u1);
-                    queueJoinTime.put(u1, System.currentTimeMillis());
-                }
-                if (p2 != null && p2.isOnline()) {
-                    q.add(u2);
-                    queueJoinTime.put(u2, System.currentTimeMillis());
-                }
+                if (p1 != null && p1.isOnline()) { q.add(u1); queueJoinTime.put(u1, System.currentTimeMillis()); }
+                if (p2 != null && p2.isOnline()) { q.add(u2); queueJoinTime.put(u2, System.currentTimeMillis()); }
             }
         }
     }
@@ -326,13 +527,11 @@ public class RtpManager {
         inCountdown.add(p2.getUniqueId());
 
         for (String line : plugin.getConfig().getStringList("rtp-messages.match-found-broadcast")) {
-            Bukkit.broadcast(plugin.toComponent(applyPlaceholders(line, item)
-                    .replace("{player1}", p1.getName()).replace("{player2}", p2.getName())));
+            Bukkit.broadcast(plugin.toComponent(applyPlaceholders(line, item).replace("{player1}", p1.getName()).replace("{player2}", p2.getName())));
         }
 
         int countdown = plugin.getConfig().getInt("rtpq-menu.countdown-seconds", 5);
-        String p1Prefix = getPlayerPrefix(p1);
-        String p2Prefix = getPlayerPrefix(p2);
+        String p1Prefix = getPlayerPrefix(p1), p2Prefix = getPlayerPrefix(p2);
 
         new BukkitRunnable() {
             int timer = countdown;
@@ -349,14 +548,13 @@ public class RtpManager {
                 if (timer > 0) {
                     Component emojiTitle = getCircleEmoji(timer);
                     Component sub = plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.match-countdown-subtitle", "&#cdd6f4Mode: {icon} &#fab387{mode}"), item));
-                    Title.Times times = Title.Times.times(Duration.ZERO, Duration.ofMillis(1250), Duration.ofMillis(250));
-                    Title titleObj = Title.title(emojiTitle, sub, times);
+                    Title titleObj = Title.title(emojiTitle, sub, Title.Times.times(Duration.ZERO, Duration.ofMillis(1250), Duration.ofMillis(250)));
                     p1.showTitle(titleObj);
                     p2.showTitle(titleObj);
 
-                    String abTemplate = applyPlaceholders(plugin.getMsg("rtp-messages.match-actionbar", "&#89dcebMode: {icon} &#fab387{mode} &8| &#89b4faOpponent: {opponent_prefix}{opponent_name}"), item);
-                    p1.sendActionBar(plugin.toComponent(abTemplate.replace("{opponent_prefix}", p2Prefix).replace("{opponent_name}", p2.getName()).replace("{time}", String.valueOf(timer))));
-                    p2.sendActionBar(plugin.toComponent(abTemplate.replace("{opponent_prefix}", p1Prefix).replace("{opponent_name}", p1.getName()).replace("{time}", String.valueOf(timer))));
+                    String ab = applyPlaceholders(plugin.getMsg("rtp-messages.match-actionbar", "&#89dcebMode: {icon} &#fab387{mode}"), item);
+                    p1.sendActionBar(plugin.toComponent(ab.replace("{opponent_prefix}", p2Prefix).replace("{opponent_name}", p2.getName()).replace("{time}", String.valueOf(timer))));
+                    p2.sendActionBar(plugin.toComponent(ab.replace("{opponent_prefix}", p1Prefix).replace("{opponent_name}", p1.getName()).replace("{time}", String.valueOf(timer))));
 
                     p1.playSound(p1.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1f, 1.2f);
                     p2.playSound(p2.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1f, 1.2f);
@@ -374,14 +572,7 @@ public class RtpManager {
     private Component getCircleEmoji(int count) {
         String cfg = plugin.getConfig().getString("rtpq-menu.countdown-titles." + count);
         if (cfg != null && !cfg.isEmpty()) return plugin.toComponent(cfg);
-        return switch (count) {
-            case 5 -> plugin.toComponent("&#f38ba8&l❺");
-            case 4 -> plugin.toComponent("&#f38ba8&l❹");
-            case 3 -> plugin.toComponent("&#fab387&l❸");
-            case 2 -> plugin.toComponent("&#fab387&l❷");
-            case 1 -> plugin.toComponent("&#a6e3a1&l❶");
-            default -> plugin.toComponent("&#fab387&l" + count);
-        };
+        return plugin.toComponent("&#fab387&l" + count);
     }
 
     private void teleportMatch(Player p1, Player p2, RtpItem item) {
@@ -403,9 +594,7 @@ public class RtpManager {
                 if (Math.abs(ty - (c1.getBlockY() - 1)) <= 1) {
                     Location c2 = new Location(world, tx + 0.5, ty + 1.0, tz + 0.5);
                     if (world.getWorldBorder().isInside(c2) && isTerrainFlatAndSafe(world, tx, tz, ty)) {
-                        loc1 = c1;
-                        loc2 = c2;
-                        break;
+                        loc1 = c1; loc2 = c2; break;
                     }
                 }
             }
@@ -413,25 +602,22 @@ public class RtpManager {
         }
 
         if (loc1 == null || loc2 == null) {
-            Component err = plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.safe-loc-not-found", "&#f38ba8Could not find a safe flat location!"), item));
-            p1.sendMessage(err);
-            p2.sendMessage(err);
+            Component err = plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.safe-loc-not-found", "&#f38ba8Could not find safe location!"), item));
+            p1.sendMessage(err); p2.sendMessage(err);
             return;
         }
 
-        Vector to2 = loc2.toVector().subtract(loc1.toVector()).normalize();
-        Vector to1 = loc1.toVector().subtract(loc2.toVector()).normalize();
-        loc1.setDirection(to2);
-        loc2.setDirection(to1);
+        loc1.setDirection(loc2.toVector().subtract(loc1.toVector()).normalize());
+        loc2.setDirection(loc1.toVector().subtract(loc2.toVector()).normalize());
         p1.teleport(loc1);
         p2.teleport(loc2);
 
-        Component fTitle = plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.match-started-title", "&#a6e3a1&lFIGHT!"), item));
-        Component fSub = plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.match-started-subtitle", "&#cdd6f4Good luck!"), item));
-        Title.Times times = Title.Times.times(Duration.ofMillis(250), Duration.ofMillis(2000), Duration.ofMillis(500));
-        Title fightTitleObj = Title.title(fTitle, fSub, times);
-        p1.showTitle(fightTitleObj);
-        p2.showTitle(fightTitleObj);
+        Title fTitle = Title.title(
+                plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.match-started-title", "&#a6e3a1&lFIGHT!"), item)),
+                plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.match-started-subtitle", "&#cdd6f4Good luck!"), item)),
+                Title.Times.times(Duration.ofMillis(250), Duration.ofMillis(2000), Duration.ofMillis(500))
+        );
+        p1.showTitle(fTitle); p2.showTitle(fTitle);
         p1.playSound(loc1, Sound.ENTITY_PLAYER_LEVELUP, 1f, 1f);
         p2.playSound(loc2, Sound.ENTITY_PLAYER_LEVELUP, 1f, 1f);
     }
@@ -447,7 +633,7 @@ public class RtpManager {
             player.sendMessage(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.teleport-success", "&#a6e3a1Teleported!"), item)
                     .replace("{x}", String.valueOf(loc.getBlockX())).replace("{y}", String.valueOf(loc.getBlockY())).replace("{z}", String.valueOf(loc.getBlockZ()))));
         } else {
-            player.sendMessage(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.safe-loc-not-found", "&#f38ba8Could not find a safe flat location!"), item)));
+            player.sendMessage(plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.safe-loc-not-found", "&#f38ba8Could not find safe location!"), item)));
         }
     }
 
@@ -492,8 +678,7 @@ public class RtpManager {
         for (int dx = -1; dx <= 1; dx++) {
             for (int dz = -1; dz <= 1; dz++) {
                 int sy = getSolidSurfaceY(world, cx + dx, cz + dz);
-                minY = Math.min(minY, sy);
-                maxY = Math.max(maxY, sy);
+                minY = Math.min(minY, sy); maxY = Math.max(maxY, sy);
                 if ((maxY - minY) > maxSlope || !isSafeBlock(world.getBlockAt(cx + dx, sy, cz + dz).getType())) return false;
             }
         }
@@ -515,4 +700,5 @@ public class RtpManager {
         }
         return "";
     }
-                    }
+    }
+                        
