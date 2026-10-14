@@ -83,6 +83,7 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
     @Override
     public void onDisable() {
         if (mainTimerTask != null) mainTimerTask.cancel();
+        if (rtpManager != null) rtpManager.shutdown();
     }
 
     public RtpManager getRtpManager() {
