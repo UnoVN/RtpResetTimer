@@ -5,6 +5,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.inventory.InventoryHolder;
 
 public class RtpListener implements Listener {
 
@@ -17,16 +18,22 @@ public class RtpListener implements Listener {
     @EventHandler
     public void onInventoryClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) return;
+        InventoryHolder holder = event.getInventory().getHolder();
 
-        if (event.getInventory().getHolder() instanceof RtpGuiHolder) {
+        if (holder instanceof RtpGuiHolder) {
             event.setCancelled(true);
-            if (event.getRawSlot() < event.getInventory().getSize()) {
+            if (event.getRawSlot() >= 0 && event.getRawSlot() < event.getInventory().getSize()) {
                 plugin.getRtpManager().handleRtpClick(player, event.getRawSlot());
             }
-        } else if (event.getInventory().getHolder() instanceof RtpQueueGuiHolder) {
+        } else if (holder instanceof RtpQueueGuiHolder) {
             event.setCancelled(true);
-            if (event.getRawSlot() < event.getInventory().getSize()) {
+            if (event.getRawSlot() >= 0 && event.getRawSlot() < event.getInventory().getSize()) {
                 plugin.getRtpManager().handleQueueClick(player, event.getRawSlot());
+            }
+        } else if (holder instanceof RtpManager.DuelGuiHolder duelHolder) {
+            event.setCancelled(true);
+            if (event.getRawSlot() >= 0 && event.getRawSlot() < event.getInventory().getSize()) {
+                plugin.getRtpManager().handleDuelGuiClick(player, duelHolder, event.getRawSlot());
             }
         }
     }
