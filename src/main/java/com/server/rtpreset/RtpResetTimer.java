@@ -20,6 +20,7 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+@SuppressWarnings("deprecation")
 public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
 
     public static class WorldProfile {
@@ -79,7 +80,7 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         if (getCommand("duel") != null) getCommand("duel").setExecutor(this);
 
         startTimerLoop();
-        getLogger().info("RtpResetTimer 1.3.0 (Duel & Sprite Edition) enabled!");
+        getLogger().info("RtpResetTimer 1.3.0 (1.21.11 Edition) enabled!");
     }
 
     @Override
@@ -90,6 +91,13 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
 
     public RtpManager getRtpManager() {
         return rtpManager;
+    }
+
+    public boolean isWorldResetting(String worldName) {
+        for (WorldProfile p : worldProfiles.values()) {
+            if (p.targetWorld.equalsIgnoreCase(worldName) && p.isResetting) return true;
+        }
+        return false;
     }
 
     public String getMsg(String path, String def) {
@@ -109,21 +117,21 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         this.spawnPitch = (float) getConfig().getDouble("lobby-spawn.pitch", 0.0);
 
         this.prefix = getConfig().getString("messages.prefix", "<glyph:warning_blue> ");
-        this.msgCountdownNormal = getConfig().getString("messages.countdown-normal", "{prefix}&#89dcebReset map {display_name} in &#b4befe{time}");
-        this.msgCountdownWarning = getConfig().getString("messages.countdown-warning", "{prefix}&#89dcebReset map {display_name} in &#fab387{time}");
-        this.msgCountdownUrgent = getConfig().getString("messages.countdown-urgent", "{prefix}&#f38ba8Reset map {display_name} in {time}");
+        this.msgCountdownNormal = getConfig().getString("messages.countdown-normal", "{prefix}&#a6adc8Resetting &#cdd6f4{display_name} &#a6adc8in &#89b4fa{time}");
+        this.msgCountdownWarning = getConfig().getString("messages.countdown-warning", "{prefix}&#a6adc8Resetting &#cdd6f4{display_name} &#a6adc8in &#fab387{time}");
+        this.msgCountdownUrgent = getConfig().getString("messages.countdown-urgent", "{prefix}&#f38ba8Resetting {display_name} in {time}");
 
-        this.msgResetting = getConfig().getString("messages.resetting", "{prefix}&#cba6f7Resetting {display_name} map...");
-        this.msgPlayerTeleported = getConfig().getString("messages.player-teleported", "{prefix}&#89b4faYou were teleported to lobby because &#b4befe{display_name} &#89b4fais resetting!");
-        this.msgResetSuccess = getConfig().getString("messages.reset-success", "{prefix}&#a6e3a1{display_name} has been successfully reset!");
-        this.msgNextReset = getConfig().getString("messages.next-reset", "{prefix}&#89dcebReset map {display_name} in &#b4befe{time}");
+        this.msgResetting = getConfig().getString("messages.resetting", "{prefix}&#a6adc8Resetting &#cdd6f4{display_name}&#a6adc8...");
+        this.msgPlayerTeleported = getConfig().getString("messages.player-teleported", "{prefix}&#a6adc8Teleported to lobby because &#cdd6f4{display_name} &#a6adc8is resetting.");
+        this.msgResetSuccess = getConfig().getString("messages.reset-success", "{prefix}&#cdd6f4{display_name} &#a6e3a1has been reset!");
+        this.msgNextReset = getConfig().getString("messages.next-reset", "{prefix}&#a6adc8Next reset for &#cdd6f4{display_name} &#a6adc8in &#89b4fa{time}");
 
-        this.msgAdminNoPermission = getConfig().getString("messages.admin.no-permission", "{prefix}&#f38ba8You do not have permission to use this command!");
-        this.msgAdminReloadSuccess = getConfig().getString("messages.admin.reload-success", "{prefix}&#a6e3a1Configuration reloaded! Loaded &#89dceb{count} &#a6e3a1worlds.");
-        this.msgAdminManualResetSingle = getConfig().getString("messages.admin.manual-reset-single", "{prefix}&#fab387Manually resetting {display_name}...");
-        this.msgAdminManualResetAll = getConfig().getString("messages.admin.manual-reset-all", "{prefix}&#fab387Manually resetting all configured worlds...");
-        this.msgAdminWorldNotFound = getConfig().getString("messages.admin.world-not-found", "{prefix}&#f38ba8World not found! Available: &#89dceb{available}");
-        this.msgAdminNoWorlds = getConfig().getString("messages.admin.no-worlds", "{prefix}&#f38ba8No worlds configured in config.yml!");
+        this.msgAdminNoPermission = getConfig().getString("messages.admin.no-permission", "{prefix}&#f38ba8No permission.");
+        this.msgAdminReloadSuccess = getConfig().getString("messages.admin.reload-success", "{prefix}&#a6e3a1Config reloaded (&#cdd6f4{count} &#a6e3a1worlds).");
+        this.msgAdminManualResetSingle = getConfig().getString("messages.admin.manual-reset-single", "{prefix}&#a6adc8Resetting &#cdd6f4{display_name}&#a6adc8...");
+        this.msgAdminManualResetAll = getConfig().getString("messages.admin.manual-reset-all", "{prefix}&#a6adc8Resetting all worlds...");
+        this.msgAdminWorldNotFound = getConfig().getString("messages.admin.world-not-found", "{prefix}&#f38ba8World not found. Available: &#cdd6f4{available}");
+        this.msgAdminNoWorlds = getConfig().getString("messages.admin.no-worlds", "{prefix}&#f38ba8No worlds configured.");
 
         ConfigurationSection section = getConfig().getConfigurationSection("worlds");
         if (section != null) {
@@ -131,14 +139,17 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
                 String target = section.getString(key + ".target-world", key);
                 String display = section.getString(key + ".display-name", key);
                 int interval = section.getInt(key + ".reset-interval-seconds", 1800);
-                double bX = section.getDouble(key + ".worldborder.center-x", 0.0);
-                double bZ = section.getDouble(key + ".worldborder.center-z", 0.0);
-                double bSize = section.getDouble(key + ".worldborder.size", 1000.0);
+                double bX = section.getDouble(key + ".worldborder.center-x", 420.0);
+                double bZ = section.getDouble(key + ".worldborder.center-z", -455.0);
+                double bSize = section.getDouble(key + ".worldborder.size", 838.0);
                 List<String> cmds = section.getStringList(key + ".post-reset-commands");
 
                 WorldProfile profile = new WorldProfile(key, target, display, interval, bX, bZ, bSize, cmds);
                 worldProfiles.put(key.toLowerCase(), profile);
                 if (defaultWorldKey == null) defaultWorldKey = key.toLowerCase();
+
+                World existingWorld = Bukkit.getWorld(target);
+                if (existingWorld != null) applyWorldSettings(existingWorld, profile);
             }
         }
 
@@ -167,19 +178,22 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
 
     public Component toComponent(String message) {
         if (message == null || message.isEmpty()) return Component.empty();
+        try {
+            String s = message.replaceAll("<sprite:(?:minecraft:)?item/([^>]+)>", "<sprite:items:item/$1>")
+                              .replaceAll("<sprite:(?:minecraft:)?block/([^>]+)>", "<sprite:blocks:block/$1>");
 
-        String s = message.replaceAll("<sprite:(?:minecraft:)?item/([^>]+)>", "<sprite:items:item/$1>")
-                          .replaceAll("<sprite:(?:minecraft:)?block/([^>]+)>", "<sprite:blocks:block/$1>");
+            Matcher matcher = HEX_PATTERN.matcher(s);
+            StringBuilder sb = new StringBuilder();
+            while (matcher.find()) {
+                matcher.appendReplacement(sb, RESET_DECOR + "<#" + matcher.group(1) + ">");
+            }
+            matcher.appendTail(sb);
+            s = convertLegacyCodes(sb.toString());
 
-        Matcher matcher = HEX_PATTERN.matcher(s);
-        StringBuilder sb = new StringBuilder();
-        while (matcher.find()) {
-            matcher.appendReplacement(sb, RESET_DECOR + "<#" + matcher.group(1) + ">");
+            return MiniMessage.miniMessage().deserialize(s);
+        } catch (Exception e) {
+            return Component.text(message);
         }
-        matcher.appendTail(sb);
-        s = convertLegacyCodes(sb.toString());
-
-        return MiniMessage.miniMessage().deserialize(s);
     }
 
     private String convertLegacyCodes(String text) {
@@ -263,7 +277,6 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
                     }
 
                     if (profile.remainingSeconds <= 0) {
-                        profile.remainingSeconds = profile.resetIntervalSeconds;
                         performWorldReset(profile);
                     }
                 }
@@ -271,52 +284,126 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         }.runTaskTimer(this, 20L, 20L);
     }
 
-    public void performWorldReset(WorldProfile profile) {
-        profile.isResetting = true;
-        broadcast(formatMessage(msgResetting, profile, null));
+    public void applyWorldSettings(World loadedWorld, WorldProfile profile) {
+        try {
+            WorldBorder border = loadedWorld.getWorldBorder();
+            border.setCenter(profile.borderCenterX, profile.borderCenterZ);
+            border.setSize(profile.borderSize);
+            border.setWarningDistance(5);
 
-        World lobbyWorld = Bukkit.getWorld(lobbyWorldName);
-        if (lobbyWorld != null) {
-            Location lobbyLocation = new Location(lobbyWorld, spawnX, spawnY, spawnZ, spawnYaw, spawnPitch);
+            loadedWorld.setTime(1000L);
+            loadedWorld.setGameRuleValue("advance_time", "false");
+            loadedWorld.setGameRuleValue("locator_bar", "false");
+
+            for (String cmd : profile.postResetCommands) {
+                String trimmed = cmd.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("time set")) continue;
+
+                if (trimmed.startsWith("gamerule ")) {
+                    String[] parts = trimmed.split("\\s+");
+                    if (parts.length >= 3) {
+                        String rule = parts[1];
+                        String val = parts[2];
+                        if (rule.equalsIgnoreCase("doDaylightCycle")) {
+                            rule = "advance_time";
+                            val = "false";
+                        }
+                        if (!loadedWorld.setGameRuleValue(rule, val)) {
+                            Bukkit.dispatchCommand(Bukkit.getConsoleSender(),
+                                    "execute in " + loadedWorld.getKey() + " run gamerule " + rule + " " + val);
+                        }
+                    }
+                    continue;
+                }
+
+                String finalCmd = trimmed.startsWith("execute in ")
+                        ? trimmed
+                        : "execute in " + loadedWorld.getKey() + " run " + trimmed;
+                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalCmd);
+            }
+        } catch (Exception e) {
+            getLogger().warning("Error applying settings to " + profile.targetWorld + ": " + e.getMessage());
+        }
+    }
+
+    // RESET 2 GIAI ĐOẠN: CHỜ UNLOAD XONG -> CHỜ LOAD XONG -> CÀI ĐẶT BORDER & GAMERULE
+    public void performWorldReset(WorldProfile profile) {
+        if (profile.isResetting) return;
+        profile.isResetting = true;
+        profile.remainingSeconds = 0;
+
+        try {
+            broadcast(formatMessage(msgResetting, profile, null));
+
+            World lobbyWorld = Bukkit.getWorld(lobbyWorldName);
             World targetWorldObj = Bukkit.getWorld(profile.targetWorld);
-            if (targetWorldObj != null) {
-                for (Player player : targetWorldObj.getPlayers()) {
+
+            if (targetWorldObj != null && lobbyWorld != null) {
+                Location lobbyLocation = new Location(lobbyWorld, spawnX, spawnY, spawnZ, spawnYaw, spawnPitch);
+                for (Player player : new ArrayList<>(targetWorldObj.getPlayers())) {
                     player.teleport(lobbyLocation);
                     player.sendMessage(formatMessage(msgPlayerTeleported, profile, null));
                 }
             }
-        } else {
-            getLogger().severe("Lobby world not found: " + lobbyWorldName);
-        }
 
-        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "swm unload " + profile.targetWorld);
-
-        Bukkit.getScheduler().runTaskLater(this, () -> {
-            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "swm load " + profile.targetWorld);
-
+            // Đợi 20 ticks (1s) sau khi đưa người chơi ra ngoài rồi chạy swm unload
             Bukkit.getScheduler().runTaskLater(this, () -> {
-                World loadedWorld = Bukkit.getWorld(profile.targetWorld);
-                if (loadedWorld != null) {
-                    WorldBorder border = loadedWorld.getWorldBorder();
-                    border.setCenter(profile.borderCenterX, profile.borderCenterZ);
-                    border.setSize(profile.borderSize);
-                    loadedWorld.setTime(1000L);
-
-                    for (String cmd : profile.postResetCommands) {
-                        String trimmed = cmd.trim();
-                        if (trimmed.startsWith("time set")) continue;
-                        String finalCmd = trimmed.startsWith("execute in ") ? trimmed : "execute in " + profile.targetWorld + " run " + trimmed;
-                        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalCmd);
-                    }
-
-                    broadcast(formatMessage(msgResetSuccess, profile, null));
-                    broadcast(formatMessage(msgNextReset, profile, formatDuration(profile.resetIntervalSeconds)));
-                } else {
-                    getLogger().severe("World " + profile.targetWorld + " not found after loading!");
+                if (Bukkit.getWorld(profile.targetWorld) != null) {
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "swm unload " + profile.targetWorld);
                 }
-                profile.isResetting = false;
-            }, 40L);
-        }, 60L);
+
+                // Giai đoạn 1: Kiểm tra mỗi 10 ticks cho đến khi world thực sự Unload khỏi Bukkit
+                new BukkitRunnable() {
+                    int unloadWait = 0;
+
+                    @Override
+                    public void run() {
+                        unloadWait++;
+                        if (Bukkit.getWorld(profile.targetWorld) == null || unloadWait >= 20) {
+                            cancel();
+                            // Đợi 20 ticks (1s) để SWM nhả khóa file rồi chạy swm load
+                            Bukkit.getScheduler().runTaskLater(RtpResetTimer.this, () -> {
+                                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "swm load " + profile.targetWorld);
+
+                                // Giai đoạn 2: Kiểm tra mỗi 10 ticks cho đến khi world thực sự Load xong
+                                new BukkitRunnable() {
+                                    int loadWait = 0;
+
+                                    @Override
+                                    public void run() {
+                                        loadWait++;
+                                        World loadedWorld = Bukkit.getWorld(profile.targetWorld);
+                                        if (loadedWorld != null) {
+                                            cancel();
+                                            Bukkit.getScheduler().runTaskLater(RtpResetTimer.this, () -> {
+                                                try {
+                                                    applyWorldSettings(loadedWorld, profile);
+                                                    broadcast(formatMessage(msgResetSuccess, profile, null));
+                                                    broadcast(formatMessage(msgNextReset, profile, formatDuration(profile.resetIntervalSeconds)));
+                                                } finally {
+                                                    profile.remainingSeconds = profile.resetIntervalSeconds;
+                                                    profile.isResetting = false;
+                                                }
+                                            }, 20L);
+                                        } else if (loadWait >= 30) {
+                                            cancel();
+                                            getLogger().severe("Timeout waiting for world " + profile.targetWorld + " to load!");
+                                            profile.remainingSeconds = profile.resetIntervalSeconds;
+                                            profile.isResetting = false;
+                                        }
+                                    }
+                                }.runTaskTimer(RtpResetTimer.this, 10L, 10L);
+                            }, 20L);
+                        }
+                    }
+                }.runTaskTimer(RtpResetTimer.this, 10L, 10L);
+            }, 20L);
+
+        } catch (Exception e) {
+            getLogger().severe("Unexpected error resetting " + profile.targetWorld + ": " + e.getMessage());
+            profile.remainingSeconds = profile.resetIntervalSeconds;
+            profile.isResetting = false;
+        }
     }
 
     @Override
@@ -368,7 +455,6 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         if (args.length > 0 && args[0].equalsIgnoreCase("all")) {
             sender.sendMessage(toComponent(msgAdminManualResetAll.replace("{prefix}", prefix)));
             for (WorldProfile p : worldProfiles.values()) {
-                p.remainingSeconds = p.resetIntervalSeconds;
                 performWorldReset(p);
             }
             return true;
@@ -389,7 +475,6 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
             if (profile != null) {
                 sender.sendMessage(toComponent(msgAdminManualResetSingle.replace("{prefix}", prefix)
                         .replace("{display_name}", profile.displayName).replace("{world}", profile.targetWorld)));
-                profile.remainingSeconds = profile.resetIntervalSeconds;
                 performWorldReset(profile);
             } else {
                 sender.sendMessage(toComponent(msgAdminWorldNotFound.replace("{prefix}", prefix)
@@ -402,11 +487,10 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
             WorldProfile defProfile = worldProfiles.get(defaultWorldKey);
             sender.sendMessage(toComponent(msgAdminManualResetSingle.replace("{prefix}", prefix)
                     .replace("{display_name}", defProfile.displayName).replace("{world}", defProfile.targetWorld)));
-            defProfile.remainingSeconds = defProfile.resetIntervalSeconds;
             performWorldReset(defProfile);
         } else {
             sender.sendMessage(toComponent(msgAdminNoWorlds.replace("{prefix}", prefix)));
         }
         return true;
     }
-                        }
+}
