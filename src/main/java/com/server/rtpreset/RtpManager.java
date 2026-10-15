@@ -24,10 +24,14 @@ import java.util.concurrent.ThreadLocalRandom;
 public class RtpManager {
 
     public static class RtpItem {
-        public String key, name, icon, modeDisplay, mapDisplay, worldName;
+        public String key, type, name, icon, modeDisplay, mapDisplay, worldName;
         public int slot, minX, maxX, minZ, maxZ;
         public Material material;
         public List<String> lore;
+
+        public boolean isArenaMode() {
+            return "ARENA".equalsIgnoreCase(type) || "boxcart".equalsIgnoreCase(key);
+        }
     }
 
     public static class QueueGuiHolder implements InventoryHolder {
@@ -38,9 +42,7 @@ public class RtpManager {
         }
 
         @Override
-        public @NotNull Inventory getInventory() {
-            return null;
-        }
+        public @NotNull Inventory getInventory() { return null; }
     }
 
     public static class DuelGuiHolder implements InventoryHolder {
@@ -53,9 +55,7 @@ public class RtpManager {
         }
 
         @Override
-        public @NotNull Inventory getInventory() {
-            return null;
-        }
+        public @NotNull Inventory getInventory() { return null; }
     }
 
     public record DuelRequest(UUID senderUuid, String modeKey, long timestamp) {}
@@ -114,6 +114,7 @@ public class RtpManager {
     private RtpItem parseItem(ConfigurationSection sec, String key) {
         RtpItem item = new RtpItem();
         item.key = key;
+        item.type = sec.getString("type", key.equalsIgnoreCase("boxcart") ? "ARENA" : "RTP");
         item.slot = sec.getInt("slot", 0);
         Material mat = Material.matchMaterial(sec.getString("material", "STONE").toUpperCase());
         item.material = mat != null ? mat : Material.STONE;
@@ -208,12 +209,8 @@ public class RtpManager {
 
     private String applyDuelPlaceholders(String text, Player sender, Player target, RtpItem item) {
         String s = applyPlaceholders(text, item);
-        if (sender != null) {
-            s = s.replace("{sender_name}", sender.getName()).replace("{sender_prefix}", getPlayerPrefix(sender));
-        }
-        if (target != null) {
-            s = s.replace("{target_name}", target.getName()).replace("{target_prefix}", getPlayerPrefix(target)).replace("{target}", target.getName());
-        }
+        if (sender != null) s = s.replace("{sender_name}", sender.getName()).replace("{sender_prefix}", getPlayerPrefix(sender));
+        if (target != null) s = s.replace("{target_name}", target.getName()).replace("{target_prefix}", getPlayerPrefix(target)).replace("{target}", target.getName());
         return s;
     }
 
@@ -263,7 +260,6 @@ public class RtpManager {
         } else if (!activeQueues.isEmpty()) {
             selected = new LinkedHashSet<>(activeQueues);
         } else {
-            // Để trống hoàn toàn khi mới mở GUI (không tự động chọn HT KIT)
             selected = new LinkedHashSet<>();
         }
 
@@ -326,11 +322,8 @@ public class RtpManager {
     public void handleQueueGuiClick(Player player, QueueGuiHolder holder, int slot) {
         for (RtpItem item : rtpqItems.values()) {
             if (item.slot == slot) {
-                if (holder.selectedModes.contains(item.key)) {
-                    holder.selectedModes.remove(item.key);
-                } else {
-                    holder.selectedModes.add(item.key);
-                }
+                if (holder.selectedModes.contains(item.key)) holder.selectedModes.remove(item.key);
+                else holder.selectedModes.add(item.key);
                 player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1f, 1.2f);
                 openRtpQueueGui(player, holder.selectedModes);
                 return;
@@ -346,10 +339,9 @@ public class RtpManager {
 
     private void confirmQueueSelection(Player player, Set<String> selectedModes) {
         UUID uuid = player.getUniqueId();
-        if (inCountdown.contains(uuid)) return;
+        if (inCountdown.contains(uuid) || plugin.getArenaManager().isInMatch(uuid)) return;
 
         Set<String> activeQueues = getPlayerQueuedModes(uuid);
-
         if (!activeQueues.isEmpty() && (selectedModes.isEmpty() || selectedModes.equals(activeQueues))) {
             player.closeInventory();
             leaveQueueCommand(player);
@@ -396,28 +388,37 @@ public class RtpManager {
 
         if (!matchedCandidates.isEmpty()) {
             Collections.shuffle(matchedCandidates);
-            RtpItem chosenItem = matchedCandidates.get(0);
-            Player opponent = opponentByMode.get(chosenItem.key);
+            for (RtpItem chosenItem : matchedCandidates) {
+                Player opponent = opponentByMode.get(chosenItem.key);
+                if (opponent == null) continue;
 
-            if (opponent != null) {
+                ArenaManager.Arena reservedArena = null;
+                if (chosenItem.isArenaMode()) {
+                    reservedArena = plugin.getArenaManager().reserveAvailableArena();
+                    if (reservedArena == null) {
+                        Component noArena = plugin.toComponent(plugin.getMsg("rtp-messages.no-arena-available",
+                                "{prefix}&#f38ba8All Boxcart arenas are currently in use! Please wait."));
+                        player.sendMessage(noArena);
+                        opponent.sendMessage(noArena);
+                        continue;
+                    }
+                }
+
                 for (List<UUID> list : queueMap.values()) {
                     list.remove(uuid);
                     list.remove(opponent.getUniqueId());
                 }
                 queueJoinTime.remove(uuid);
                 queueJoinTime.remove(opponent.getUniqueId());
-                startMatchmaking(opponent, player, chosenItem);
+                startMatchmaking(opponent, player, chosenItem, reservedArena);
                 return;
             }
         }
 
         queueJoinTime.put(uuid, System.currentTimeMillis());
         String modesWithCount = formatModeList(selectedModes, true);
-
-        player.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.joined-queue", "{prefix}&#a6adc8Joined queue: {modes}")
-                .replace("{modes}", modesWithCount)));
+        player.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.joined-queue", "{prefix}&#a6adc8Joined queue: {modes}").replace("{modes}", modesWithCount)));
         player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1.2f);
-
         Bukkit.broadcast(plugin.toComponent(plugin.getMsg("rtp-messages.queue-broadcast", "{prefix}&#cdd6f4{player} &#a6adc8is queuing for {modes}")
                 .replace("{player}", player.getName()).replace("{modes}", modesWithCount)));
     }
@@ -545,7 +546,8 @@ public class RtpManager {
             player.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.duel-self", "{prefix}&#f38ba8You cannot duel yourself.")));
             return;
         }
-        if (inCountdown.contains(player.getUniqueId()) || inCountdown.contains(target.getUniqueId())) {
+        if (inCountdown.contains(player.getUniqueId()) || inCountdown.contains(target.getUniqueId())
+                || plugin.getArenaManager().isInMatch(player.getUniqueId()) || plugin.getArenaManager().isInMatch(target.getUniqueId())) {
             player.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.duel-busy", "{prefix}&#f38ba8That player is currently in a match.")));
             return;
         }
@@ -553,7 +555,8 @@ public class RtpManager {
     }
 
     private void sendDuelRequest(Player sender, Player target, RtpItem item) {
-        if (inCountdown.contains(sender.getUniqueId()) || inCountdown.contains(target.getUniqueId())) {
+        if (inCountdown.contains(sender.getUniqueId()) || inCountdown.contains(target.getUniqueId())
+                || plugin.getArenaManager().isInMatch(sender.getUniqueId()) || plugin.getArenaManager().isInMatch(target.getUniqueId())) {
             sender.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.duel-busy", "{prefix}&#f38ba8Player is busy.")));
             return;
         }
@@ -597,9 +600,22 @@ public class RtpManager {
             return;
         }
 
-        if (inCountdown.contains(sender.getUniqueId()) || inCountdown.contains(target.getUniqueId())) {
+        if (inCountdown.contains(sender.getUniqueId()) || inCountdown.contains(target.getUniqueId())
+                || plugin.getArenaManager().isInMatch(sender.getUniqueId()) || plugin.getArenaManager().isInMatch(target.getUniqueId())) {
             target.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.duel-busy", "{prefix}&#f38ba8Player is busy.")));
             return;
+        }
+
+        ArenaManager.Arena reservedArena = null;
+        if (item.isArenaMode()) {
+            reservedArena = plugin.getArenaManager().reserveAvailableArena();
+            if (reservedArena == null) {
+                Component noArena = plugin.toComponent(plugin.getMsg("rtp-messages.no-arena-available",
+                        "{prefix}&#f38ba8All Boxcart arenas are currently in use! Please wait."));
+                target.sendMessage(noArena);
+                sender.sendMessage(noArena);
+                return;
+            }
         }
 
         for (List<UUID> list : queueMap.values()) {
@@ -612,7 +628,7 @@ public class RtpManager {
         target.sendMessage(plugin.toComponent(applyDuelPlaceholders(plugin.getMsg("rtp-messages.duel-accepted-target", "{prefix}&#a6e3a1Accepted duel!"), sender, target, item)));
         sender.sendMessage(plugin.toComponent(applyDuelPlaceholders(plugin.getMsg("rtp-messages.duel-accepted-sender", "{prefix}&#a6e3a1Duel accepted!"), sender, target, item)));
 
-        startMatchmaking(sender, target, item);
+        startMatchmaking(sender, target, item, reservedArena);
     }
 
     public void handleRtpClick(Player player, int slot) {
@@ -632,8 +648,7 @@ public class RtpManager {
         if (!activeModes.isEmpty()) {
             String modesStr = formatModeList(activeModes, false);
             for (List<UUID> list : queueMap.values()) list.remove(uuid);
-            player.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.left-queue", "{prefix}&#a6adc8Left queue: {modes}")
-                    .replace("{modes}", modesStr)));
+            player.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.left-queue", "{prefix}&#a6adc8Left queue: {modes}").replace("{modes}", modesStr)));
             return true;
         }
         player.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.not-in-queue", "{prefix}&#f38ba8You are not in any queue.")));
@@ -647,14 +662,16 @@ public class RtpManager {
         inCountdown.remove(uuid);
     }
 
-    private void startMatchmaking(Player p1, Player p2, RtpItem item) {
+    private void startMatchmaking(Player p1, Player p2, RtpItem item, ArenaManager.Arena reservedArena) {
         p1.closeInventory();
         p2.closeInventory();
         inCountdown.add(p1.getUniqueId());
         inCountdown.add(p2.getUniqueId());
 
+        String mapName = reservedArena != null ? reservedArena.name : item.mapDisplay;
         for (String line : plugin.getConfig().getStringList("rtp-messages.match-found-broadcast")) {
-            Bukkit.broadcast(plugin.toComponent(applyPlaceholders(line, item).replace("{player1}", p1.getName()).replace("{player2}", p2.getName())));
+            Bukkit.broadcast(plugin.toComponent(applyPlaceholders(line.replace("{map}", mapName), item)
+                    .replace("{player1}", p1.getName()).replace("{player2}", p2.getName())));
         }
 
         int countdown = plugin.getConfig().getInt("rtpq-menu.countdown-seconds", 5);
@@ -667,6 +684,7 @@ public class RtpManager {
                 if (!p1.isOnline() || !p2.isOnline()) {
                     inCountdown.remove(p1.getUniqueId());
                     inCountdown.remove(p2.getUniqueId());
+                    if (reservedArena != null) plugin.getArenaManager().releaseArena(reservedArena);
                     cancel();
                     if (p1.isOnline()) p1.sendMessage(plugin.toComponent("<glyph:warning_blue> &#f38ba8Opponent disconnected."));
                     if (p2.isOnline()) p2.sendMessage(plugin.toComponent("<glyph:warning_blue> &#f38ba8Opponent disconnected."));
@@ -690,7 +708,11 @@ public class RtpManager {
                     inCountdown.remove(p1.getUniqueId());
                     inCountdown.remove(p2.getUniqueId());
                     cancel();
-                    teleportMatch(p1, p2, item);
+                    if (reservedArena != null) {
+                        plugin.getArenaManager().startArenaMatch(p1, p2, reservedArena, item);
+                    } else {
+                        teleportMatch(p1, p2, item);
+                    }
                 }
             }
         }.runTaskTimer(plugin, 0L, 20L);
@@ -713,8 +735,7 @@ public class RtpManager {
         World world = Bukkit.getWorld(item.worldName);
         if (world == null || plugin.isWorldResetting(item.worldName)) {
             Component msg = plugin.toComponent(plugin.getMsg("rtp-messages.world-resetting", "{prefix}&#f38ba8Map is currently resetting, please wait a moment!"));
-            p1.sendMessage(msg);
-            p2.sendMessage(msg);
+            p1.sendMessage(msg); p2.sendMessage(msg);
             return;
         }
 
@@ -842,5 +863,5 @@ public class RtpManager {
         }
         return "";
     }
-        }
-                             
+            }
+                                                                        
