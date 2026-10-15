@@ -58,15 +58,17 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
 
     private BukkitTask mainTimerTask;
     private RtpManager rtpManager;
+    private ArenaManager arenaManager;
     private static final Pattern HEX_PATTERN = Pattern.compile("&#([A-Fa-f0-9]{6});?");
     private static final String RESET_DECOR = "<!bold><!italic><!underlined><!strikethrough><!obfuscated>";
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        this.arenaManager = new ArenaManager(this);
+        this.rtpManager = new RtpManager(this);
         loadConfiguration();
 
-        this.rtpManager = new RtpManager(this);
         getServer().getPluginManager().registerEvents(new RtpListener(this), this);
 
         if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
@@ -75,22 +77,33 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         }
 
         if (getCommand("rtpreset") != null) getCommand("rtpreset").setExecutor(this);
+        if (getCommand("setup") != null) getCommand("setup").setExecutor(this);
         if (getCommand("rtp") != null) getCommand("rtp").setExecutor(this);
         if (getCommand("rtpq") != null) getCommand("rtpq").setExecutor(this);
         if (getCommand("duel") != null) getCommand("duel").setExecutor(this);
 
         startTimerLoop();
-        getLogger().info("RtpResetTimer 1.3.0 (1.21.11 Edition) enabled!");
+        getLogger().info("RtpResetTimer 1.4.0 (Boxcart Arena Edition) enabled!");
     }
 
     @Override
     public void onDisable() {
         if (mainTimerTask != null) mainTimerTask.cancel();
         if (rtpManager != null) rtpManager.shutdown();
+        if (arenaManager != null) arenaManager.shutdown();
     }
 
     public RtpManager getRtpManager() {
         return rtpManager;
+    }
+
+    public ArenaManager getArenaManager() {
+        return arenaManager;
+    }
+
+    public Location getLobbyLocation() {
+        World w = Bukkit.getWorld(lobbyWorldName);
+        return w != null ? new Location(w, spawnX, spawnY, spawnZ, spawnYaw, spawnPitch) : null;
     }
 
     public boolean isWorldResetting(String worldName) {
@@ -154,6 +167,7 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         }
 
         if (rtpManager != null) rtpManager.loadConfig();
+        if (arenaManager != null) arenaManager.loadArenas();
     }
 
     public int getRemainingSeconds() {
@@ -326,7 +340,6 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         }
     }
 
-    // RESET 2 GIAI ĐOẠN: CHỜ UNLOAD XONG -> CHỜ LOAD XONG -> CÀI ĐẶT BORDER & GAMERULE
     public void performWorldReset(WorldProfile profile) {
         if (profile.isResetting) return;
         profile.isResetting = true;
@@ -335,24 +348,21 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         try {
             broadcast(formatMessage(msgResetting, profile, null));
 
-            World lobbyWorld = Bukkit.getWorld(lobbyWorldName);
+            Location lobbyLocation = getLobbyLocation();
             World targetWorldObj = Bukkit.getWorld(profile.targetWorld);
 
-            if (targetWorldObj != null && lobbyWorld != null) {
-                Location lobbyLocation = new Location(lobbyWorld, spawnX, spawnY, spawnZ, spawnYaw, spawnPitch);
+            if (targetWorldObj != null && lobbyLocation != null) {
                 for (Player player : new ArrayList<>(targetWorldObj.getPlayers())) {
                     player.teleport(lobbyLocation);
                     player.sendMessage(formatMessage(msgPlayerTeleported, profile, null));
                 }
             }
 
-            // Đợi 20 ticks (1s) sau khi đưa người chơi ra ngoài rồi chạy swm unload
             Bukkit.getScheduler().runTaskLater(this, () -> {
                 if (Bukkit.getWorld(profile.targetWorld) != null) {
                     Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "swm unload " + profile.targetWorld);
                 }
 
-                // Giai đoạn 1: Kiểm tra mỗi 10 ticks cho đến khi world thực sự Unload khỏi Bukkit
                 new BukkitRunnable() {
                     int unloadWait = 0;
 
@@ -361,11 +371,9 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
                         unloadWait++;
                         if (Bukkit.getWorld(profile.targetWorld) == null || unloadWait >= 20) {
                             cancel();
-                            // Đợi 20 ticks (1s) để SWM nhả khóa file rồi chạy swm load
                             Bukkit.getScheduler().runTaskLater(RtpResetTimer.this, () -> {
                                 Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "swm load " + profile.targetWorld);
 
-                                // Giai đoạn 2: Kiểm tra mỗi 10 ticks cho đến khi world thực sự Load xong
                                 new BukkitRunnable() {
                                     int loadWait = 0;
 
@@ -409,19 +417,13 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
         if (command.getName().equalsIgnoreCase("rtp")) {
-            if (!(sender instanceof Player player)) {
-                sender.sendMessage("This command is only for players!");
-                return true;
-            }
+            if (!(sender instanceof Player player)) return true;
             rtpManager.openRtpGui(player);
             return true;
         }
 
         if (command.getName().equalsIgnoreCase("rtpq")) {
-            if (!(sender instanceof Player player)) {
-                sender.sendMessage("This command is only for players!");
-                return true;
-            }
+            if (!(sender instanceof Player player)) return true;
             if (args.length > 0 && args[0].equalsIgnoreCase("leave")) {
                 rtpManager.leaveQueueCommand(player);
                 return true;
@@ -431,16 +433,19 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         }
 
         if (command.getName().equalsIgnoreCase("duel")) {
-            if (!(sender instanceof Player player)) {
-                sender.sendMessage("This command is only for players!");
-                return true;
-            }
+            if (!(sender instanceof Player player)) return true;
             rtpManager.handleDuelCommand(player, args);
             return true;
         }
 
         if (!sender.hasPermission("rtpreset.admin")) {
             sender.sendMessage(toComponent(msgAdminNoPermission.replace("{prefix}", prefix)));
+            return true;
+        }
+
+        if (command.getName().equalsIgnoreCase("setup")) {
+            if (!(sender instanceof Player player)) return true;
+            arenaManager.openSetupListGui(player);
             return true;
         }
 
@@ -454,9 +459,7 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
 
         if (args.length > 0 && args[0].equalsIgnoreCase("all")) {
             sender.sendMessage(toComponent(msgAdminManualResetAll.replace("{prefix}", prefix)));
-            for (WorldProfile p : worldProfiles.values()) {
-                performWorldReset(p);
-            }
+            for (WorldProfile p : worldProfiles.values()) performWorldReset(p);
             return true;
         }
 
@@ -465,13 +468,9 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
             WorldProfile profile = worldProfiles.get(key);
             if (profile == null) {
                 for (WorldProfile p : worldProfiles.values()) {
-                    if (p.targetWorld.equalsIgnoreCase(key)) {
-                        profile = p;
-                        break;
-                    }
+                    if (p.targetWorld.equalsIgnoreCase(key)) { profile = p; break; }
                 }
             }
-
             if (profile != null) {
                 sender.sendMessage(toComponent(msgAdminManualResetSingle.replace("{prefix}", prefix)
                         .replace("{display_name}", profile.displayName).replace("{world}", profile.targetWorld)));
@@ -493,4 +492,4 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         }
         return true;
     }
-}
+                }
