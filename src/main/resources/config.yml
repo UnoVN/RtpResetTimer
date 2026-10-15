@@ -1,5 +1,5 @@
 # ╔════════════════════════════════════════════════════════════════════════════╗
-# ║               RTP RESET TIMER, 1V1 QUEUE & DUEL CONFIGURATION              ║
+# ║          RTP RESET TIMER, 1V1 QUEUE, DUEL & ARENA CONFIGURATION            ║
 # ║                 Theme: Minimalist Catppuccin Mocha (1.21.11)               ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
@@ -67,6 +67,9 @@ rtp-menu:
 
 # ==============================================================================
 # [4] 1V1 BATTLE QUEUE GUI (/rtpq or /rtpqueue)
+# Mode 'type' can be:
+#   • "RTP"   -> Teleports randomly in 'world' avoiding craters
+#   • "ARENA" -> Teleports to a pre-configured Arena (/setup) for 3 rounds
 # ==============================================================================
 rtpq-menu:
   title: "&#cdd6f4&l1V1 BATTLE QUEUE"
@@ -105,7 +108,6 @@ rtpq-menu:
       - ""
       - "<glyph:left_click> &#f38ba8Click to leave queue"
 
-  # Non-bold circle numbers for clean visibility
   countdown-titles:
     5: "&#f38ba8❺"
     4: "&#f38ba8❹"
@@ -116,6 +118,7 @@ rtpq-menu:
   items:
     ht_kit:
       slot: 11
+      type: "RTP"
       material: "CROSSBOW"
       icon: "<white><sprite:items:item/crossbow_standby></white>"
       name: "{icon} &#cdd6f4&lHT KIT"
@@ -133,7 +136,8 @@ rtpq-menu:
       max-z: -80
 
     lt_kit:
-      slot: 15
+      slot: 13
+      type: "RTP"
       material: "BOW"
       icon: "<white><sprite:items:item/bow></white>"
       name: "{icon} &#cdd6f4&lLT KIT"
@@ -149,6 +153,21 @@ rtpq-menu:
       max-x: 790
       min-z: -820
       max-z: -80
+
+    boxcart:
+      slot: 15
+      type: "ARENA"
+      material: "TNT_MINECART"
+      icon: "<white><sprite:items:item/tnt_minecart></white>"
+      name: "{icon} &#cdd6f4&lBOXCART"
+      mode-display: "BOXCART"
+      map-display: "Boxcart Arena"
+      lore:
+        - "&#a6adc8Format: &#cdd6f43 Rounds Arena"
+        - "&#a6adc8Queued: &#89b4fa{current_queue}/2"
+        - ""
+        - "{queue_status}"
+      world: "world"
 
 
 # ==============================================================================
@@ -191,7 +210,21 @@ duel-menu:
 
 
 # ==============================================================================
-# [6] SMART SAFETY & ANTI-CRATER ALGORITHM
+# [6] BOXCART ARENA SETTINGS & REGEN COMMAND (/setup)
+# ==============================================================================
+arena-settings:
+  total-rounds: 3
+  # Command dispatched by console after each round & match end ({arena} = arena name)
+  regen-command: "arenaregen regen {arena}"
+  # Delay in ticks before teleporting players to spawns for the next round (20 ticks = 1s)
+  round-restart-delay-ticks: 25
+
+# Saved arenas configured via /setup (Do not edit manually unless needed)
+arenas: {}
+
+
+# ==============================================================================
+# [7] SMART SAFETY & ANTI-CRATER ALGORITHM
 # ==============================================================================
 rtp-settings:
   min-player-distance: 50.0
@@ -200,7 +233,7 @@ rtp-settings:
 
 
 # ==============================================================================
-# [7] MESSAGES & BROADCASTS (Clean Minimalist Style)
+# [8] MESSAGES & BROADCASTS (Clean Minimalist Style)
 # ==============================================================================
 messages:
   prefix: "<glyph:warning_blue> "
@@ -248,7 +281,20 @@ rtp-messages:
   teleport-success: "{prefix}&#a6adc8Teleported to &#cdd6f4{x}, {y}, {z}"
   safe-loc-not-found: "{prefix}&#f38ba8Could not find a safe location, try again."
   world-resetting: "{prefix}&#f38ba8Map is currently resetting, please wait a moment!"
+  no-arena-available: "{prefix}&#f38ba8All Boxcart arenas are currently in use! Please wait."
 
+  # Arena 3-Round Messages
+  arena-round-end: "{prefix}&#cdd6f4{winner} &#a6adc8won Round &#89b4fa{round}/{total} &#a6adc8(&#a6e3a1{p1_wins}&#a6adc8-&#f38ba8{p2_wins}&#a6adc8)!"
+  arena-round-title: "&#89b4faROUND {round}/{total}"
+  arena-round-subtitle: "&#cdd6f4{p1} &#a6e3a1{p1_wins} &8- &#f38ba8{p2_wins} &#cdd6f4{p2}"
+  arena-match-end:
+    - ""
+    - " &8» &#a6e3a1&lBOXCART MATCH FINISHED"
+    - " &8» &#a6adc8Winner: &#cdd6f4{winner} &8(&#a6e3a1{w_wins} &8- &#f38ba8{l_wins}&8)"
+    - " &8» &#a6adc8Arena: &#89b4fa{arena}"
+    - ""
+
+  # Duel Messages
   duel-usage: "{prefix}&#a6adc8Usage: &#cdd6f4/duel <player>"
   duel-player-not-found: "{prefix}&#f38ba8Player not found."
   duel-self: "{prefix}&#f38ba8You cannot duel yourself."
@@ -267,3 +313,4 @@ rtp-messages:
     - " &8» &#a6adc8Mode: {icon} &#cdd6f4{mode} &8| &#a6adc8Map: &#cdd6f4{map}"
     - " &8» <click:run_command:'/duel accept {sender_name}'><hover:show_text:'&#a6e3a1Click to accept'>&#a6e3a1[ACCEPT]</hover></click>  <click:run_command:'/duel deny {sender_name}'><hover:show_text:'&#f38ba8Click to decline'>&#f38ba8[DENY]</hover></click>"
     - ""
+    
