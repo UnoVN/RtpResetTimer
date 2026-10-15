@@ -1,5 +1,5 @@
 name: RtpResetTimer
-version: '1.3.0'
+version: '1.4.0'
 main: com.server.rtpreset.RtpResetTimer
 api-version: '1.21'
 author: Nhan
@@ -7,6 +7,9 @@ softdepend: [PlaceholderAPI]
 commands:
   rtpreset:
     description: Reset or reload RtpResetTimer configuration
+    permission: rtpreset.admin
+  setup:
+    description: Open Arena Setup GUI for Boxcart mode
     permission: rtpreset.admin
   rtp:
     description: Open Random Teleport menu
@@ -21,7 +24,7 @@ commands:
 
 permissions:
   rtpreset.admin:
-    description: Admin permission for RtpResetTimer
+    description: Admin permission for RtpResetTimer and Arena Setup
     default: op
   rtpreset.use:
     description: Allow all players to use /rtp, /rtpq, and /duel by default
