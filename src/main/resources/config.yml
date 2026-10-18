@@ -67,9 +67,6 @@ rtp-menu:
 
 # ==============================================================================
 # [4] 1V1 BATTLE QUEUE GUI (/rtpq or /rtpqueue)
-# Mode 'type' can be:
-#   • "RTP"   -> Teleports randomly in 'world' avoiding craters
-#   • "ARENA" -> Teleports to a pre-configured Arena (/setup) for 3 rounds
 # ==============================================================================
 rtpq-menu:
   title: "&#cdd6f4&l1V1 BATTLE QUEUE"
@@ -163,7 +160,7 @@ rtpq-menu:
       mode-display: "BOXCART"
       map-display: "Boxcart Arena"
       lore:
-        - "&#a6adc8Format: &#cdd6f43 Rounds Arena"
+        - "&#a6adc8Format: &#cdd6f4First to 3 Wins"
         - "&#a6adc8Queued: &#89b4fa{current_queue}/2"
         - ""
         - "{queue_status}"
@@ -210,17 +207,15 @@ duel-menu:
 
 
 # ==============================================================================
-# [6] BOXCART ARENA SETTINGS & REGEN COMMAND (/setup)
+# [6] BOXCART ARENA SETTINGS (Saved in SQLite arenas.db)
 # ==============================================================================
 arena-settings:
-  total-rounds: 3
+  # First player to reach this number of wins takes the match (First to 3)
+  first-to-wins: 3
   # Command dispatched by console after each round & match end ({arena} = arena name)
   regen-command: "arenaregen regen {arena}"
   # Delay in ticks before teleporting players to spawns for the next round (20 ticks = 1s)
   round-restart-delay-ticks: 25
-
-# Saved arenas configured via /setup (Do not edit manually unless needed)
-arenas: {}
 
 
 # ==============================================================================
@@ -258,7 +253,7 @@ rtp-messages:
   no-mode-selected: "{prefix}&#f38ba8Select at least one mode first."
   joined-queue: "{prefix}&#a6adc8Joined queue: {modes}"
   left-queue: "{prefix}&#a6adc8Left queue: {modes}"
-  not-in-queue: "{prefix}&#f38ba8You are not in any queue."
+  not-in-queue: "{prefix}&#f38ba8You are not in any match or queue."
   queue-broadcast: "{prefix}&#cdd6f4{player} &#a6adc8is queuing for {modes} &8| &#89b4fa/rtpq"
   queue-timeout: "{prefix}&#f38ba8Queue timed out ({timeout})."
 
@@ -283,10 +278,11 @@ rtp-messages:
   world-resetting: "{prefix}&#f38ba8Map is currently resetting, please wait a moment!"
   no-arena-available: "{prefix}&#f38ba8All Boxcart arenas are currently in use! Please wait."
 
-  # Arena 3-Round Messages
-  arena-round-end: "{prefix}&#cdd6f4{winner} &#a6adc8won Round &#89b4fa{round}/{total} &#a6adc8(&#a6e3a1{p1_wins}&#a6adc8-&#f38ba8{p2_wins}&#a6adc8)!"
-  arena-round-title: "&#89b4faROUND {round}/{total}"
+  # Arena First-to-X Messages & Forfeit
+  arena-round-end: "{prefix}&#cdd6f4{winner} &#a6adc8won Round &#89b4fa{round} &#a6adc8(&#a6e3a1{p1_wins}&#a6adc8-&#f38ba8{p2_wins}&#a6adc8, First to &#89b4fa{first_to}&#a6adc8)!"
+  arena-round-title: "&#89b4faROUND {round}"
   arena-round-subtitle: "&#cdd6f4{p1} &#a6e3a1{p1_wins} &8- &#f38ba8{p2_wins} &#cdd6f4{p2}"
+  arena-forfeit: "{prefix}&#f38ba8{forfeiter} forfeited the match! &#a6e3a1{winner} wins!"
   arena-match-end:
     - ""
     - " &8» &#a6e3a1&lBOXCART MATCH FINISHED"
@@ -313,4 +309,3 @@ rtp-messages:
     - " &8» &#a6adc8Mode: {icon} &#cdd6f4{mode} &8| &#a6adc8Map: &#cdd6f4{map}"
     - " &8» <click:run_command:'/duel accept {sender_name}'><hover:show_text:'&#a6e3a1Click to accept'>&#a6e3a1[ACCEPT]</hover></click>  <click:run_command:'/duel deny {sender_name}'><hover:show_text:'&#f38ba8Click to decline'>&#f38ba8[DENY]</hover></click>"
     - ""
-    
