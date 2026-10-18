@@ -1,72 +1,35 @@
-# +-------------------------------------------------------------------+ #
-# |                   AntiArmorTrim Configuration                     | #
-# |                  Theme: Catppuccin Mocha Palette                  | #
-# +-------------------------------------------------------------------+ #
+name: RtpResetTimer
+version: '1.5.0'
+main: com.server.rtpreset.RtpResetTimer
+api-version: '1.21'
+author: Nhan
+softdepend: [PlaceholderAPI]
+commands:
+  rtpreset:
+    description: Reset or reload RtpResetTimer configuration
+    permission: rtpreset.admin
+  setup:
+    description: Open Arena Setup GUI for Boxcart mode
+    permission: rtpreset.admin
+  rtp:
+    description: Open Random Teleport menu
+    permission: rtpreset.use
+  rtpq:
+    description: Open 1v1 Battle Queue menu
+    aliases: [rtpqueue]
+    permission: rtpreset.use
+  duel:
+    description: Challenge a player to a 1v1 Duel
+    permission: rtpreset.use
+  forfeit:
+    description: Forfeit current Arena match or leave queue
+    aliases: [leave, ff]
+    permission: rtpreset.use
 
-luckperms:
-  auto-detect-rank: true
-  fallback-rank: "<#f9e2af><bold>VIP</bold>"
-
-gui:
-  decor-title: "<#cba6f7><bold>Decoration Studio</bold>"
-  main-title: "<#cba6f7><bold>Armor Trim Studio</bold>"
-  slot-title: "<slot_icon> <#cba6f7><bold>Trim Editor:</bold> <#74c7ec><slot>"
-  hat-title: "<white><sprite:items:item/netherite_helmet></white> <#cba6f7><bold>Custom Hat Studio</bold>"
-  hat-admin-title: "<white><sprite:items:item/command_block></white> <#f38ba8><bold>Admin Hat Manager</bold>"
-  rename-title: "<white><sprite:items:item/name_tag></white> <#cba6f7><bold>Item Rename Studio</bold>"
-
-  # Status shown when player HAS permission
-  selected-status: "<#a6e3a1>● Selected"
-  unselected-status: "<#6c7086>○ Unselected"
-
-  # Lore appended ONLY when the player DOES NOT HAVE permission
-  no-permission-lore:
-    - ""
-    - "<#f38ba8>Locked"
-    - "<#a6adc8>Required Rank: <rank>"
-
-# List of Nexo item IDs available in /hat (Manageable in-game via /hat admin)
-hats:
-  items: []
-
-rename:
-  max-length: 48
-
-messages:
-  prefix: ""
-
-  # Enforcement messages
-  remove-trim: "<#f38ba8>You do not have permission to own or wear trimmed armor."
-  deny-smith: "<#f38ba8>You are not allowed to apply armor trims at a Smithing Table."
-  no-permission-gui: "<#f38ba8>You do not have access to this feature. Required rank: <rank>"
-
-  # Trim Studio feedback messages
-  trim-selected: "<#cdd6f4>Applied <pattern_icon> <#89dceb><pattern> <#6c7086>(<material_icon> <#fab387><material><#6c7086>) <#cdd6f4>to <slot_icon> <#74c7ec><slot><#cdd6f4>."
-  trim-applied-all: "<#cdd6f4>Synced <pattern_icon> <#89dceb><pattern> <#6c7086>(<material_icon> <#fab387><material><#6c7086>) <#cdd6f4>to all <#cba6f7>4 armor pieces<#cdd6f4>."
-  trim-cleared: "<#cdd6f4>Cleared active trim for <slot_icon> <#74c7ec><slot><#cdd6f4>."
-  trim-cleared-all: "<#cdd6f4>Cleared active trims across all <#cba6f7>4 armor pieces<#cdd6f4>."
-  trim-hat-active: "<#fab387>Helmet trim is currently disabled while a Custom Hat is active."
-
-  # Custom Hat Studio feedback messages
-  hat-selected: "<white><sprite:items:item/netherite_helmet></white> <#cdd6f4>Selected custom hat <#cba6f7><hat><#cdd6f4>. Equip a Diamond or Netherite helmet to apply it."
-  hat-cleared: "<white><sprite:items:item/barrier></white> <#cdd6f4>Disabled custom hat and restored your helmet appearance."
-  hat-admin-prompt: "<white><sprite:items:item/command_block></white> <#cdd6f4>Type the <#89dceb>Nexo Item ID<#cdd6f4> in chat to add a hat, or type <#f38ba8>cancel<#cdd6f4>."
-  hat-admin-cancelled: "<#a6adc8>Hat addition cancelled."
-  hat-admin-added: "<#a6e3a1>Added Nexo hat ID <#89dceb><id><#a6e3a1> to the hat list."
-  hat-admin-added-invalid: "<#fab387>Added ID <#f38ba8><id><#fab387>, but it was not found in Nexo! You can delete it in the Admin GUI."
-  hat-admin-exists: "<#f38ba8>Hat ID <#f9e2af><id><#f38ba8> is already in the list."
-  hat-admin-removed: "<#f38ba8>Removed hat ID <#f9e2af><id><#f38ba8> from the hat list."
-
-  # Rename Studio feedback messages
-  rename-prompt: "<white><sprite:items:item/name_tag></white> <#cdd6f4>Type the new item name in chat, or type <#f38ba8>cancel<#cdd6f4>."
-  rename-cancelled: "<#a6adc8>Item rename cancelled."
-  rename-no-item: "<#f38ba8>Hold an item in your <#f9e2af>Main Hand<#f38ba8> to rename it."
-  rename-too-long: "<#f38ba8>Name is too long (Max <#f9e2af><max><#f38ba8> characters)."
-  rename-success: "<white><sprite:items:item/name_tag></white> <#cdd6f4>Renamed item to <name><#cdd6f4>."
-  rename-reset: "<white><sprite:items:item/name_tag></white> <#cdd6f4>Reset item name to default."
-
-  # Admin & System messages
-  reload-success: "<#a6e3a1>Configuration reloaded."
-  no-permission: "<#f38ba8>You do not have permission to use this command."
-  only-players: "<#f38ba8>This command can only be used in-game."
-  usage: "<#a6adc8>Usage: <#f9e2af>/<label> reload"
+permissions:
+  rtpreset.admin:
+    description: Admin permission for RtpResetTimer and Arena Setup
+    default: op
+  rtpreset.use:
+    description: Allow all players to use /rtp, /rtpq, /duel, and /forfeit
+    default: true
