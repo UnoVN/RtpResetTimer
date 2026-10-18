@@ -1,39 +1,35 @@
-name: AntiArmorTrim
-version: 2.4.0
-main: com.server.antitrim.AntiArmorTrim
+name: RtpResetTimer
+version: '1.5.0'
+main: com.server.rtpreset.RtpResetTimer
 api-version: '1.21'
-author: LeThienNhan
-softdepend: [LuckPerms, Nexo]
-description: Catppuccin Decoration Studio - Armor Trim, Nexo Custom Hats & Item Rename.
-
+author: Nhan
+softdepend: [PlaceholderAPI]
 commands:
-  antitrim:
-    description: Admin command for AntiArmorTrim
-    aliases: [at, vctrim]
-    permission: armortrim.admin
-  decor:
-    description: Open the Decoration Studio Hub GUI
-    aliases: [cosmetics, studio]
-  trim:
-    description: Open the Armor Trim Studio GUI
-    aliases: [armortrim, trims]
-  hat:
-    description: Open the Custom Hat Studio GUI
-    aliases: [hats, customhat]
-  rename:
-    description: Open the Item Rename Studio GUI or rename held item
-    aliases: [itemrename]
+  rtpreset:
+    description: Reset or reload RtpResetTimer configuration
+    permission: rtpreset.admin
+  setup:
+    description: Open Arena Setup GUI for Boxcart mode
+    permission: rtpreset.admin
+  rtp:
+    description: Open Random Teleport menu
+    permission: rtpreset.use
+  rtpq:
+    description: Open 1v1 Battle Queue menu
+    aliases: [rtpqueue]
+    permission: rtpreset.use
+  duel:
+    description: Challenge a player to a 1v1 Duel
+    permission: rtpreset.use
+  forfeit:
+    description: Forfeit current Arena match or leave queue
+    aliases: [leave, ff]
+    permission: rtpreset.use
 
 permissions:
-  armortrim.bypass:
-    description: Allows owning, wearing, and using the Auto-Trim GUI Studio.
+  rtpreset.admin:
+    description: Admin permission for RtpResetTimer and Arena Setup
     default: op
-  armortrim.hat:
-    description: Allows equipping Nexo Custom Hats on Diamond and Netherite helmets.
-    default: op
-  armortrim.rename:
-    description: Allows renaming items via the Rename Studio GUI or command.
-    default: op
-  armortrim.admin:
-    description: Allows reloading config and managing Custom Hats via Admin GUI.
-    default: op
+  rtpreset.use:
+    description: Allow all players to use /rtp, /rtpq, /duel, and /forfeit
+    default: true
