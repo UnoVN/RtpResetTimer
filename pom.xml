@@ -1,64 +1,39 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
+name: AntiArmorTrim
+version: 2.4.0
+main: com.server.antitrim.AntiArmorTrim
+api-version: '1.21'
+author: LeThienNhan
+softdepend: [LuckPerms, Nexo]
+description: Catppuccin Decoration Studio - Armor Trim, Nexo Custom Hats & Item Rename.
 
-    <groupId>com.server.rtpreset</groupId>
-    <artifactId>RtpResetTimer</artifactId>
-    <version>1.2.0</version>
-    <packaging>jar</packaging>
+commands:
+  antitrim:
+    description: Admin command for AntiArmorTrim
+    aliases: [at, vctrim]
+    permission: armortrim.admin
+  decor:
+    description: Open the Decoration Studio Hub GUI
+    aliases: [cosmetics, studio]
+  trim:
+    description: Open the Armor Trim Studio GUI
+    aliases: [armortrim, trims]
+  hat:
+    description: Open the Custom Hat Studio GUI
+    aliases: [hats, customhat]
+  rename:
+    description: Open the Item Rename Studio GUI or rename held item
+    aliases: [itemrename]
 
-    <name>RtpResetTimer</name>
-
-    <properties>
-        <java.version>21</java.version>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    </properties>
-
-    <repositories>
-        <repository>
-            <id>papermc</id>
-            <url>https://repo.papermc.io/repository/maven-public/</url>
-        </repository>
-        <repository>
-            <id>placeholderapi</id>
-            <url>https://repo.extendedclip.com/content/repositories/placeholderapi/</url>
-        </repository>
-    </repositories>
-
-    <dependencies>
-        <dependency>
-            <groupId>io.papermc.paper</groupId>
-            <artifactId>paper-api</artifactId>
-            <version>1.21.1-R0.1-SNAPSHOT</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>me.clip</groupId>
-            <artifactId>placeholderapi</artifactId>
-            <version>2.11.6</version>
-            <scope>provided</scope>
-        </dependency>
-    </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.13.0</version>
-                <configuration>
-                    <source>${java.version}</source>
-                    <target>${java.version}</target>
-                </configuration>
-            </plugin>
-        </plugins>
-        <resources>
-            <resource>
-                <directory>src/main/resources</directory>
-                <filtering>true</filtering>
-            </resource>
-        </resources>
-    </build>
-</project>
+permissions:
+  armortrim.bypass:
+    description: Allows owning, wearing, and using the Auto-Trim GUI Studio.
+    default: op
+  armortrim.hat:
+    description: Allows equipping Nexo Custom Hats on Diamond and Netherite helmets.
+    default: op
+  armortrim.rename:
+    description: Allows renaming items via the Rename Studio GUI or command.
+    default: op
+  armortrim.admin:
+    description: Allows reloading config and managing Custom Hats via Admin GUI.
+    default: op
