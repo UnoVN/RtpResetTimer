@@ -4,6 +4,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
@@ -39,7 +40,7 @@ public class RtpListener implements Listener {
         } else if (holder instanceof RtpManager.DuelGuiHolder duelHolder) {
             event.setCancelled(true);
             if (slot >= 0 && slot < event.getInventory().getSize()) {
-                plugin.getRtpManager().handleDuelGuiClick(player, duelHolder, slot);
+                plugin.getRtpManager().handleDuelGuiClick(player, duelHolder, slot, event.getClick());
             }
         } else if (holder instanceof ArenaManager.SetupListHolder) {
             event.setCancelled(true);
@@ -50,6 +51,15 @@ public class RtpListener implements Listener {
             event.setCancelled(true);
             if (slot >= 0 && slot < event.getInventory().getSize()) {
                 plugin.getArenaManager().handleSetupEditClick(player, editHolder, slot);
+            }
+        }
+    }
+
+    @EventHandler
+    public void onEntityDamage(EntityDamageEvent event) {
+        if (event.getEntity() instanceof Player player) {
+            if (plugin.getArenaManager().isBetweenRounds(player.getUniqueId())) {
+                event.setCancelled(true);
             }
         }
     }
