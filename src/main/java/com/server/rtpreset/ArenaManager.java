@@ -6,10 +6,9 @@ import net.kyori.adventure.title.Title;
 import org.bukkit.*;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
-import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
-import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.inventory.Inventory;
@@ -18,6 +17,8 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.jetbrains.annotations.NotNull;
 
+import java.io.File;
+import java.sql.*;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -25,18 +26,38 @@ import java.util.concurrent.ConcurrentHashMap;
 @SuppressWarnings("deprecation")
 public class ArenaManager {
 
+    // Lưu tọa độ độc lập với đối tượng World để không bao giờ mất khi SWM unload/reload
+    public record SavedPoint(String worldName, double x, double y, double z, float yaw, float pitch) {
+        public static SavedPoint from(Location loc) {
+            return new SavedPoint(loc.getWorld().getName(), loc.getX(), loc.getY(), loc.getZ(), loc.getYaw(), loc.getPitch());
+        }
+
+        public Location toLocation() {
+            World w = Bukkit.getWorld(worldName);
+            return w != null ? new Location(w, x, y, z, yaw, pitch) : null;
+        }
+
+        public String formatBlock() {
+            return worldName + " (" + Location.locToBlock(x) + ", " + Location.locToBlock(y) + ", " + Location.locToBlock(z) + ")";
+        }
+    }
+
     public static class Arena {
         public String name;
-        public Location spawn1;
-        public Location spawn2;
+        public SavedPoint spawn1;
+        public SavedPoint spawn2;
         public boolean inUse = false;
 
         public Arena(String name) {
             this.name = name;
         }
 
-        public boolean isReady() {
-            return spawn1 != null && spawn2 != null && spawn1.getWorld() != null && spawn2.getWorld() != null;
+        public boolean isConfigured() {
+            return spawn1 != null && spawn2 != null;
+        }
+
+        public boolean isReadyForMatch() {
+            return isConfigured() && spawn1.toLocation() != null && spawn2.toLocation() != null;
         }
     }
 
@@ -45,22 +66,22 @@ public class ArenaManager {
         public final RtpManager.RtpItem item;
         public final UUID p1;
         public final UUID p2;
-        public final int totalRounds;
+        public final int winsRequired;
         public int currentRound = 1;
         public int p1Wins = 0;
         public int p2Wins = 0;
         public boolean processingRoundEnd = false;
 
-        public ArenaMatch(Arena arena, RtpManager.RtpItem item, UUID p1, UUID p2, int totalRounds) {
+        public ArenaMatch(Arena arena, RtpManager.RtpItem item, UUID p1, UUID p2, int winsRequired) {
             this.arena = arena;
             this.item = item;
             this.p1 = p1;
             this.p2 = p2;
-            this.totalRounds = totalRounds;
+            this.winsRequired = winsRequired;
         }
 
         public Location getSpawn(UUID uuid) {
-            return uuid.equals(p1) ? arena.spawn1 : arena.spawn2;
+            return uuid.equals(p1) ? arena.spawn1.toLocation() : arena.spawn2.toLocation();
         }
     }
 
@@ -77,6 +98,7 @@ public class ArenaManager {
     }
 
     private final RtpResetTimer plugin;
+    private final File dbFile;
     private final Map<String, Arena> arenas = new LinkedHashMap<>();
     private final Map<UUID, ArenaMatch> activeMatches = new ConcurrentHashMap<>();
     private final Map<UUID, Location> pendingRespawns = new ConcurrentHashMap<>();
@@ -84,7 +106,100 @@ public class ArenaManager {
 
     public ArenaManager(RtpResetTimer plugin) {
         this.plugin = plugin;
-        loadArenas();
+        if (!plugin.getDataFolder().exists()) plugin.getDataFolder().mkdirs();
+        this.dbFile = new File(plugin.getDataFolder(), "arenas.db");
+        initDatabase();
+        loadArenasFromDb();
+    }
+
+    private Connection getConnection() throws SQLException {
+        return DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath());
+    }
+
+    private void initDatabase() {
+        try (Connection conn = getConnection(); Statement stmt = conn.createStatement()) {
+            stmt.executeUpdate("CREATE TABLE IF NOT EXISTS arenas (" +
+                    "name TEXT PRIMARY KEY," +
+                    "w1 TEXT, x1 REAL, y1 REAL, z1 REAL, yaw1 REAL, pitch1 REAL," +
+                    "w2 TEXT, x2 REAL, y2 REAL, z2 REAL, yaw2 REAL, pitch2 REAL)");
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Failed to initialize arenas.db: " + e.getMessage());
+        }
+    }
+
+    public void loadArenasFromDb() {
+        Set<String> inUseSet = new HashSet<>();
+        for (Arena a : arenas.values()) {
+            if (a.inUse) inUseSet.add(a.name);
+        }
+        arenas.clear();
+
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT * FROM arenas")) {
+            while (rs.next()) {
+                String name = rs.getString("name");
+                Arena arena = new Arena(name);
+                arena.inUse = inUseSet.contains(name);
+
+                String w1 = rs.getString("w1");
+                if (w1 != null && !w1.isEmpty()) {
+                    arena.spawn1 = new SavedPoint(w1, rs.getDouble("x1"), rs.getDouble("y1"), rs.getDouble("z1"),
+                            rs.getFloat("yaw1"), rs.getFloat("pitch1"));
+                }
+                String w2 = rs.getString("w2");
+                if (w2 != null && !w2.isEmpty()) {
+                    arena.spawn2 = new SavedPoint(w2, rs.getDouble("x2"), rs.getDouble("y2"), rs.getDouble("z2"),
+                            rs.getFloat("yaw2"), rs.getFloat("pitch2"));
+                }
+                arenas.put(name, arena);
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Failed to load arenas from arenas.db: " + e.getMessage());
+        }
+    }
+
+    private void saveArenaToDb(Arena a) {
+        String sql = "INSERT OR REPLACE INTO arenas (name, w1, x1, y1, z1, yaw1, pitch1, w2, x2, y2, z2, yaw2, pitch2) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        try (Connection conn = getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, a.name);
+            if (a.spawn1 != null) {
+                ps.setString(2, a.spawn1.worldName());
+                ps.setDouble(3, a.spawn1.x());
+                ps.setDouble(4, a.spawn1.y());
+                ps.setDouble(5, a.spawn1.z());
+                ps.setFloat(6, a.spawn1.yaw());
+                ps.setFloat(7, a.spawn1.pitch());
+            } else {
+                ps.setNull(2, Types.VARCHAR);
+                ps.setDouble(3, 0); ps.setDouble(4, 0); ps.setDouble(5, 0); ps.setFloat(6, 0); ps.setFloat(7, 0);
+            }
+            if (a.spawn2 != null) {
+                ps.setString(8, a.spawn2.worldName());
+                ps.setDouble(9, a.spawn2.x());
+                ps.setDouble(10, a.spawn2.y());
+                ps.setDouble(11, a.spawn2.z());
+                ps.setFloat(12, a.spawn2.yaw());
+                ps.setFloat(13, a.spawn2.pitch());
+            } else {
+                ps.setNull(8, Types.VARCHAR);
+                ps.setDouble(9, 0); ps.setDouble(10, 0); ps.setDouble(11, 0); ps.setFloat(12, 0); ps.setFloat(13, 0);
+            }
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Failed to save arena " + a.name + ": " + e.getMessage());
+        }
+    }
+
+    private void deleteArenaFromDb(String name) {
+        try (Connection conn = getConnection();
+             PreparedStatement ps = conn.prepareStatement("DELETE FROM arenas WHERE name = ?")) {
+            ps.setString(1, name);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Failed to delete arena " + name + ": " + e.getMessage());
+        }
     }
 
     public void shutdown() {
@@ -99,45 +214,6 @@ public class ArenaManager {
         awaitingChatName.clear();
     }
 
-    public void loadArenas() {
-        arenas.clear();
-        ConfigurationSection sec = plugin.getConfig().getConfigurationSection("arenas");
-        if (sec == null) return;
-        for (String key : sec.getKeys(false)) {
-            Arena arena = new Arena(key);
-            arena.spawn1 = readLoc(sec.getConfigurationSection(key + ".spawn1"));
-            arena.spawn2 = readLoc(sec.getConfigurationSection(key + ".spawn2"));
-            arenas.put(key, arena);
-        }
-    }
-
-    public void saveArenas() {
-        plugin.getConfig().set("arenas", null);
-        for (Arena a : arenas.values()) {
-            writeLoc("arenas." + a.name + ".spawn1", a.spawn1);
-            writeLoc("arenas." + a.name + ".spawn2", a.spawn2);
-        }
-        plugin.saveConfig();
-    }
-
-    private Location readLoc(ConfigurationSection s) {
-        if (s == null) return null;
-        World w = Bukkit.getWorld(s.getString("world", "world"));
-        if (w == null) return null;
-        return new Location(w, s.getDouble("x"), s.getDouble("y"), s.getDouble("z"),
-                (float) s.getDouble("yaw"), (float) s.getDouble("pitch"));
-    }
-
-    private void writeLoc(String path, Location loc) {
-        if (loc == null || loc.getWorld() == null) return;
-        plugin.getConfig().set(path + ".world", loc.getWorld().getName());
-        plugin.getConfig().set(path + ".x", loc.getX());
-        plugin.getConfig().set(path + ".y", loc.getY());
-        plugin.getConfig().set(path + ".z", loc.getZ());
-        plugin.getConfig().set(path + ".yaw", loc.getYaw());
-        plugin.getConfig().set(path + ".pitch", loc.getPitch());
-    }
-
     public boolean isInMatch(UUID uuid) {
         return activeMatches.containsKey(uuid);
     }
@@ -145,7 +221,7 @@ public class ArenaManager {
     public synchronized Arena reserveAvailableArena() {
         List<Arena> free = new ArrayList<>();
         for (Arena a : arenas.values()) {
-            if (!a.inUse && a.isReady()) free.add(a);
+            if (!a.inUse && a.isReadyForMatch()) free.add(a);
         }
         if (free.isEmpty()) return null;
         Arena chosen = free.get(new Random().nextInt(free.size()));
@@ -166,25 +242,54 @@ public class ArenaManager {
     }
 
     public void startArenaMatch(Player p1, Player p2, Arena arena, RtpManager.RtpItem item) {
-        int totalRounds = Math.max(1, plugin.getConfig().getInt("arena-settings.total-rounds", 3));
-        ArenaMatch match = new ArenaMatch(arena, item, p1.getUniqueId(), p2.getUniqueId(), totalRounds);
+        int winsReq = Math.max(1, plugin.getConfig().getInt("arena-settings.first-to-wins",
+                plugin.getConfig().getInt("arena-settings.total-rounds", 3)));
+        ArenaMatch match = new ArenaMatch(arena, item, p1.getUniqueId(), p2.getUniqueId(), winsReq);
         activeMatches.put(p1.getUniqueId(), match);
         activeMatches.put(p2.getUniqueId(), match);
 
-        p1.teleport(arena.spawn1);
-        p2.teleport(arena.spawn2);
+        Location loc1 = arena.spawn1.toLocation();
+        Location loc2 = arena.spawn2.toLocation();
+        if (loc1 != null) p1.teleport(loc1);
+        if (loc2 != null) p2.teleport(loc2);
         healPlayer(p1);
         healPlayer(p2);
 
         Title fTitle = Title.title(
                 plugin.toComponent(plugin.getMsg("rtp-messages.match-started-title", "&#a6e3a1FIGHT!")),
-                plugin.toComponent("&#a6adc8Round &#89b4fa1/" + totalRounds + " &8| &#cdd6f4" + arena.name),
+                plugin.toComponent("&#a6adc8First to &#89b4fa" + winsReq + " &8| &#cdd6f4" + arena.name),
                 Title.Times.times(Duration.ofMillis(200), Duration.ofMillis(1800), Duration.ofMillis(400))
         );
         p1.showTitle(fTitle);
         p2.showTitle(fTitle);
-        p1.playSound(arena.spawn1, Sound.ENTITY_PLAYER_LEVELUP, 1f, 1f);
-        p2.playSound(arena.spawn2, Sound.ENTITY_PLAYER_LEVELUP, 1f, 1f);
+        if (loc1 != null) p1.playSound(loc1, Sound.ENTITY_PLAYER_LEVELUP, 1f, 1f);
+        if (loc2 != null) p2.playSound(loc2, Sound.ENTITY_PLAYER_LEVELUP, 1f, 1f);
+    }
+
+    // LỆNH /FORFEIT HOẶC /LEAVE ĐẦU HÀNG TRẬN ĐẤU
+    public boolean forfeitMatch(Player forfeiter) {
+        UUID uuid = forfeiter.getUniqueId();
+        ArenaMatch match = activeMatches.get(uuid);
+        if (match == null) return false;
+
+        boolean isP1 = uuid.equals(match.p1);
+        if (isP1) match.p2Wins = match.winsRequired;
+        else match.p1Wins = match.winsRequired;
+
+        Player p1 = Bukkit.getPlayer(match.p1);
+        Player p2 = Bukkit.getPlayer(match.p2);
+        Player winner = isP1 ? p2 : p1;
+        String winnerName = winner != null ? winner.getName() : "Opponent";
+
+        String ffMsg = plugin.getMsg("rtp-messages.arena-forfeit",
+                "{prefix}&#f38ba8{forfeiter} forfeited the match! &#a6e3a1{winner} wins!")
+                .replace("{forfeiter}", forfeiter.getName())
+                .replace("{winner}", winnerName);
+        if (p1 != null) p1.sendMessage(plugin.toComponent(ffMsg));
+        if (p2 != null) p2.sendMessage(plugin.toComponent(ffMsg));
+
+        finishMatch(match);
+        return true;
     }
 
     public void handlePlayerDeath(PlayerDeathEvent event) {
@@ -192,14 +297,14 @@ public class ArenaManager {
         ArenaMatch match = activeMatches.get(dead.getUniqueId());
         if (match == null) return;
 
+        boolean deadIsP1 = dead.getUniqueId().equals(match.p1);
         if (match.processingRoundEnd) {
-            pendingRespawns.put(dead.getUniqueId(),
-                    match.currentRound <= match.totalRounds ? match.getSpawn(dead.getUniqueId()) : plugin.getLobbyLocation());
+            boolean matchOver = match.p1Wins >= match.winsRequired || match.p2Wins >= match.winsRequired;
+            pendingRespawns.put(dead.getUniqueId(), matchOver ? plugin.getLobbyLocation() : match.getSpawn(dead.getUniqueId()));
             return;
         }
         match.processingRoundEnd = true;
 
-        boolean deadIsP1 = dead.getUniqueId().equals(match.p1);
         UUID winnerUuid = deadIsP1 ? match.p2 : match.p1;
         if (deadIsP1) match.p2Wins++; else match.p1Wins++;
 
@@ -211,17 +316,19 @@ public class ArenaManager {
         String p2Name = p2 != null ? p2.getName() : "P2";
 
         int finishedRound = match.currentRound;
+        boolean reachedWinTarget = (match.p1Wins >= match.winsRequired || match.p2Wins >= match.winsRequired);
 
-        if (finishedRound < match.totalRounds) {
-            // CÒN ROUND TIẾP THEO -> HỒI SINH TẠI ARENA SPAWN & REGEN MAP
+        if (!reachedWinTarget) {
+            // CHƯA ĐỦ 3 WIN (FIRST TO 3) -> TIẾP TỤC ROUND TIẾP THEO & REGEN ARENA
             match.currentRound++;
             pendingRespawns.put(dead.getUniqueId(), match.getSpawn(dead.getUniqueId()));
 
             String roundMsg = plugin.getMsg("rtp-messages.arena-round-end",
-                    "{prefix}&#cdd6f4{winner} &#a6adc8won Round &#89b4fa{round}/{total} &#a6adc8(&#a6e3a1{p1_wins}&#a6adc8-&#f38ba8{p2_wins}&#a6adc8)!")
+                    "{prefix}&#cdd6f4{winner} &#a6adc8won Round &#89b4fa{round} &#a6adc8(&#a6e3a1{p1_wins}&#a6adc8-&#f38ba8{p2_wins}&#a6adc8, First to &#89b4fa{first_to}&#a6adc8)!")
                     .replace("{winner}", winnerName)
                     .replace("{round}", String.valueOf(finishedRound))
-                    .replace("{total}", String.valueOf(match.totalRounds))
+                    .replace("{total}", String.valueOf(match.winsRequired))
+                    .replace("{first_to}", String.valueOf(match.winsRequired))
                     .replace("{p1_wins}", String.valueOf(match.p1Wins))
                     .replace("{p2_wins}", String.valueOf(match.p2Wins));
 
@@ -235,18 +342,20 @@ public class ArenaManager {
                 if (!activeMatches.containsKey(match.p1)) return;
                 match.processingRoundEnd = false;
 
-                if (p1 != null && p1.isOnline() && !p1.isDead()) {
-                    p1.teleport(match.arena.spawn1);
+                Location s1 = match.arena.spawn1.toLocation();
+                Location s2 = match.arena.spawn2.toLocation();
+                if (p1 != null && p1.isOnline() && !p1.isDead() && s1 != null) {
+                    p1.teleport(s1);
                     healPlayer(p1);
                 }
-                if (p2 != null && p2.isOnline() && !p2.isDead()) {
-                    p2.teleport(match.arena.spawn2);
+                if (p2 != null && p2.isOnline() && !p2.isDead() && s2 != null) {
+                    p2.teleport(s2);
                     healPlayer(p2);
                 }
 
-                String rTitle = plugin.getMsg("rtp-messages.arena-round-title", "&#89b4faROUND {round}/{total}")
+                String rTitle = plugin.getMsg("rtp-messages.arena-round-title", "&#89b4faROUND {round}")
                         .replace("{round}", String.valueOf(match.currentRound))
-                        .replace("{total}", String.valueOf(match.totalRounds));
+                        .replace("{total}", String.valueOf(match.winsRequired));
                 String rSub = plugin.getMsg("rtp-messages.arena-round-subtitle", "&#cdd6f4{p1} &#a6e3a1{p1_wins} &8- &#f38ba8{p2_wins} &#cdd6f4{p2}")
                         .replace("{p1}", p1Name).replace("{p2}", p2Name)
                         .replace("{p1_wins}", String.valueOf(match.p1Wins))
@@ -259,7 +368,7 @@ public class ArenaManager {
             }, delay);
 
         } else {
-            // ĐÃ HOÀN THÀNH ĐỦ 3 ROUND -> VỀ LOBBY & REGEN ARENA
+            // ĐÃ CHẠM MỐC FIRST TO 3 -> KẾT THÚC TRẬN, VỀ LOBBY & REGEN ARENA
             Location lobby = plugin.getLobbyLocation();
             if (lobby != null) pendingRespawns.put(dead.getUniqueId(), lobby);
             finishMatch(match);
@@ -289,13 +398,9 @@ public class ArenaManager {
         UUID uuid = quitter.getUniqueId();
         awaitingChatName.remove(uuid);
         pendingRespawns.remove(uuid);
-
-        ArenaMatch match = activeMatches.get(uuid);
-        if (match == null) return;
-
-        if (uuid.equals(match.p1)) match.p2Wins = match.totalRounds;
-        else match.p1Wins = match.totalRounds;
-        finishMatch(match);
+        if (activeMatches.containsKey(uuid)) {
+            forfeitMatch(quitter);
+        }
     }
 
     private void finishMatch(ArenaMatch match) {
@@ -336,7 +441,7 @@ public class ArenaManager {
         p.setFoodLevel(20);
     }
 
-    // ==================== HỆ THỐNG GUI /SETUP ====================
+    // ==================== HỆ THỐNG GUI /SETUP (LƯU TRỰC TIẾP VÀO SQLITE) ====================
     public void openSetupListGui(Player admin) {
         Inventory inv = Bukkit.createInventory(new SetupListHolder(), 27, plugin.toComponent("&#cdd6f4&lARENA SETUP"));
         ItemStack glass = createItem(Material.BLACK_STAINED_GLASS_PANE, " ", Collections.emptyList());
@@ -345,9 +450,9 @@ public class ArenaManager {
         int slot = 0;
         for (Arena a : arenas.values()) {
             if (slot >= 18) break;
-            String s1 = a.spawn1 != null ? "&#a6e3a1Set (" + a.spawn1.getBlockX() + ", " + a.spawn1.getBlockY() + ", " + a.spawn1.getBlockZ() + ")" : "&#f38ba8Not Set";
-            String s2 = a.spawn2 != null ? "&#a6e3a1Set (" + a.spawn2.getBlockX() + ", " + a.spawn2.getBlockY() + ", " + a.spawn2.getBlockZ() + ")" : "&#f38ba8Not Set";
-            String st = a.inUse ? "&#fab387In Match" : (a.isReady() ? "&#a6e3a1Ready" : "&#f38ba8Incomplete");
+            String s1 = a.spawn1 != null ? "&#a6e3a1" + a.spawn1.formatBlock() : "&#f38ba8Not Set";
+            String s2 = a.spawn2 != null ? "&#a6e3a1" + a.spawn2.formatBlock() : "&#f38ba8Not Set";
+            String st = a.inUse ? "&#fab387In Match" : (a.isConfigured() ? "&#a6e3a1Saved in DB" : "&#f38ba8Incomplete");
 
             inv.setItem(slot++, createItem(Material.TNT_MINECART, "&#89b4fa&l" + a.name, Arrays.asList(
                     "&#a6adc8Spawn 1: " + s1,
@@ -373,8 +478,8 @@ public class ArenaManager {
         ItemStack glass = createItem(Material.BLACK_STAINED_GLASS_PANE, " ", Collections.emptyList());
         for (int i = 0; i < 27; i++) inv.setItem(i, glass);
 
-        String s1 = arena.spawn1 != null ? "&#a6e3a1" + arena.spawn1.getBlockX() + ", " + arena.spawn1.getBlockY() + ", " + arena.spawn1.getBlockZ() : "&#f38ba8Not Set";
-        String s2 = arena.spawn2 != null ? "&#a6e3a1" + arena.spawn2.getBlockX() + ", " + arena.spawn2.getBlockY() + ", " + arena.spawn2.getBlockZ() : "&#f38ba8Not Set";
+        String s1 = arena.spawn1 != null ? "&#a6e3a1" + arena.spawn1.formatBlock() : "&#f38ba8Not Set";
+        String s2 = arena.spawn2 != null ? "&#a6e3a1" + arena.spawn2.formatBlock() : "&#f38ba8Not Set";
 
         inv.setItem(11, createItem(Material.NAME_TAG, "&#89b4fa&lSET ARENA NAME", Arrays.asList(
                 "&#a6adc8Current Name: &#cdd6f4" + arena.name,
@@ -408,7 +513,7 @@ public class ArenaManager {
             while (arenas.containsKey("arena_" + idx)) idx++;
             Arena created = new Arena("arena_" + idx);
             arenas.put(created.name, created);
-            saveArenas();
+            saveArenaToDb(created);
             admin.playSound(admin.getLocation(), Sound.UI_BUTTON_CLICK, 1f, 1.2f);
             openSetupEditGui(admin, created);
             return;
@@ -419,7 +524,7 @@ public class ArenaManager {
             Arena target = list.get(slot);
             if (click.isRightClick()) {
                 arenas.remove(target.name);
-                saveArenas();
+                deleteArenaFromDb(target.name);
                 admin.playSound(admin.getLocation(), Sound.ENTITY_ITEM_BREAK, 1f, 1f);
                 openSetupListGui(admin);
             } else {
@@ -442,18 +547,18 @@ public class ArenaManager {
             admin.sendMessage(plugin.toComponent(plugin.getMsg("messages.prefix", "") +
                     "&#cdd6f4Type the new arena name in chat (or type &#f38ba8cancel &#cdd6f4to abort):"));
         } else if (slot == 13) {
-            arena.spawn1 = admin.getLocation().clone();
-            saveArenas();
+            arena.spawn1 = SavedPoint.from(admin.getLocation());
+            saveArenaToDb(arena);
             admin.playSound(admin.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1.2f);
             admin.sendMessage(plugin.toComponent(plugin.getMsg("messages.prefix", "") +
-                    "&#a6e3a1Set Spawn Location 1 for arena &#cdd6f4" + arena.name + "&#a6e3a1!"));
+                    "&#a6e3a1Saved Spawn 1 to database for &#cdd6f4" + arena.name + "&#a6e3a1!"));
             openSetupEditGui(admin, arena);
         } else if (slot == 15) {
-            arena.spawn2 = admin.getLocation().clone();
-            saveArenas();
+            arena.spawn2 = SavedPoint.from(admin.getLocation());
+            saveArenaToDb(arena);
             admin.playSound(admin.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1.2f);
             admin.sendMessage(plugin.toComponent(plugin.getMsg("messages.prefix", "") +
-                    "&#a6e3a1Set Spawn Location 2 for arena &#cdd6f4" + arena.name + "&#a6e3a1!"));
+                    "&#a6e3a1Saved Spawn 2 to database for &#cdd6f4" + arena.name + "&#a6e3a1!"));
             openSetupEditGui(admin, arena);
         } else if (slot == 22) {
             openSetupListGui(admin);
@@ -485,12 +590,14 @@ public class ArenaManager {
             }
 
             arenas.remove(oldName);
+            deleteArenaFromDb(oldName);
             arena.name = input;
             arenas.put(input, arena);
-            saveArenas();
+            saveArenaToDb(arena);
+
             player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1f, 1.2f);
             player.sendMessage(plugin.toComponent(plugin.getMsg("messages.prefix", "") +
-                    "&#a6e3a1Arena name set to &#cdd6f4" + input + "&#a6e3a1!"));
+                    "&#a6e3a1Arena name saved to database as &#cdd6f4" + input + "&#a6e3a1!"));
             openSetupEditGui(player, arena);
         });
     }
