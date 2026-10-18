@@ -1,5 +1,5 @@
 name: RtpResetTimer
-version: '1.4.0'
+version: '1.5.0'
 main: com.server.rtpreset.RtpResetTimer
 api-version: '1.21'
 author: Nhan
@@ -21,12 +21,16 @@ commands:
   duel:
     description: Challenge a player to a 1v1 Duel
     permission: rtpreset.use
+  forfeit:
+    description: Forfeit current Arena match or leave queue
+    aliases: [leave, ff]
+    permission: rtpreset.use
 
 permissions:
   rtpreset.admin:
     description: Admin permission for RtpResetTimer and Arena Setup
     default: op
   rtpreset.use:
-    description: Allow all players to use /rtp, /rtpq, and /duel by default
+    description: Allow all players to use /rtp, /rtpq, /duel, and /forfeit
     default: true
     
