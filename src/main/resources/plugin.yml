@@ -33,4 +33,3 @@ permissions:
   rtpreset.use:
     description: Allow all players to use /rtp, /rtpq, /duel, and /forfeit
     default: true
-    
