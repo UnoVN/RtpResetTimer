@@ -1,35 +1,330 @@
-name: RtpResetTimer
-version: '1.5.0'
-main: com.server.rtpreset.RtpResetTimer
-api-version: '1.21'
-author: Nhan
-softdepend: [PlaceholderAPI]
-commands:
-  rtpreset:
-    description: Reset or reload RtpResetTimer configuration
-    permission: rtpreset.admin
-  setup:
-    description: Open Arena Setup GUI for Boxcart mode
-    permission: rtpreset.admin
-  rtp:
-    description: Open Random Teleport menu
-    permission: rtpreset.use
-  rtpq:
-    description: Open 1v1 Battle Queue menu
-    aliases: [rtpqueue]
-    permission: rtpreset.use
-  duel:
-    description: Challenge a player to a 1v1 Duel
-    permission: rtpreset.use
-  forfeit:
-    description: Forfeit current Arena match or leave queue
-    aliases: [leave, ff]
-    permission: rtpreset.use
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║          RTP RESET TIMER, 1V1 QUEUE, DUEL & ARENA CONFIGURATION            ║
+# ║                 Theme: Minimalist Catppuccin Mocha (1.21.11)               ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
 
-permissions:
-  rtpreset.admin:
-    description: Admin permission for RtpResetTimer and Arena Setup
-    default: op
-  rtpreset.use:
-    description: Allow all players to use /rtp, /rtpq, /duel, and /forfeit
-    default: true
+# ==============================================================================
+# [1] SAFE LOBBY SPAWN
+# ==============================================================================
+lobby-spawn:
+  world: "world"
+  x: 157.5
+  y: 115.0
+  z: -5.5
+  yaw: 90.0
+  pitch: 0.0
+
+
+# ==============================================================================
+# [2] AUTOMATED WORLD RESET (SlimeWorldManager - 1.21.11)
+# ==============================================================================
+worlds:
+  desert:
+    target-world: "rtpdesert"
+    display-name: "RTP Desert"
+    reset-interval-seconds: 1800
+
+    worldborder:
+      center-x: 420.0
+      center-z: -455.0
+      size: 838.0
+
+    post-reset-commands:
+      - "time set day"
+      - "gamerule locator_bar false"
+      - "gamerule advance_time false"
+
+
+# ==============================================================================
+# [3] SOLO RANDOM TELEPORT GUI (/rtp)
+# ==============================================================================
+rtp-menu:
+  title: "&#cdd6f4&lRANDOM TELEPORT"
+  size: 27
+
+  filler:
+    enabled: true
+    material: "BLACK_STAINED_GLASS_PANE"
+    name: " "
+
+  items:
+    desert:
+      slot: 13
+      material: "SAND"
+      icon: "<white><sprite:blocks:block/sand></white>"
+      name: "{icon} &#cdd6f4&lRTP Desert"
+      lore:
+        - "&#a6adc8Free-for-all combat arena"
+        - "&#a6adc8Safe & flat terrain detection"
+        - ""
+        - "<glyph:left_click> &#a6e3a1Click to teleport"
+      world: "rtpdesert"
+      min-x: 20
+      max-x: 820
+      min-z: -855
+      max-z: -55
+
+
+# ==============================================================================
+# [4] 1V1 BATTLE QUEUE GUI (/rtpq or /rtpqueue)
+# ==============================================================================
+rtpq-menu:
+  title: "&#cdd6f4&l1V1 BATTLE QUEUE"
+  size: 27
+  countdown-seconds: 5
+  player-gap: 8
+
+  queue-timeout:
+    enabled: true
+    timeout-seconds: 120
+
+  filler:
+    enabled: true
+    material: "BLACK_STAINED_GLASS_PANE"
+    name: " "
+
+  status-selected: "&#a6e3a1✔ Selected"
+  status-unselected: "<glyph:left_click> &#a6adc8Click to select"
+  none-selected: "&#f38ba8None"
+
+  confirm-button:
+    slot: 22
+    material: "LIME_CONCRETE"
+    name: "&#a6e3a1&lCONFIRM QUEUE"
+    lore:
+      - "&#a6adc8Modes: {selected_modes}"
+      - ""
+      - "<glyph:left_click> &#a6e3a1Click to start queuing"
+
+  leave-button:
+    slot: 22
+    material: "RED_CONCRETE"
+    name: "&#f38ba8&lLEAVE QUEUE"
+    lore:
+      - "&#a6adc8Queuing: {selected_modes}"
+      - ""
+      - "<glyph:left_click> &#f38ba8Click to leave queue"
+
+  # Non-bold circle numbers for clean visibility
+  countdown-titles:
+    5: "&#f38ba8❺"
+    4: "&#f38ba8❹"
+    3: "&#fab387❸"
+    2: "&#fab387❷"
+    1: "&#a6e3a1❶"
+
+  items:
+    ht_kit:
+      slot: 11
+      type: "RTP"
+      material: "CROSSBOW"
+      icon: "<white><sprite:items:item/crossbow_standby></white>"
+      name: "{icon} &#cdd6f4&lHT KIT"
+      mode-display: "HT KIT"
+      map-display: "RTP Desert"
+      lore:
+        - "&#a6adc8Map: &#cdd6f4RTP Desert"
+        - "&#a6adc8Queued: &#89b4fa{current_queue}/2"
+        - ""
+        - "{queue_status}"
+      world: "rtpdesert"
+      min-x: 50
+      max-x: 790
+      min-z: -820
+      max-z: -80
+
+    lt_kit:
+      slot: 13
+      type: "RTP"
+      material: "BOW"
+      icon: "<white><sprite:items:item/bow></white>"
+      name: "{icon} &#cdd6f4&lLT KIT"
+      mode-display: "LT KIT"
+      map-display: "RTP Desert"
+      lore:
+        - "&#a6adc8Map: &#cdd6f4RTP Desert"
+        - "&#a6adc8Queued: &#89b4fa{current_queue}/2"
+        - ""
+        - "{queue_status}"
+      world: "rtpdesert"
+      min-x: 50
+      max-x: 790
+      min-z: -820
+      max-z: -80
+
+    boxcart:
+      slot: 15
+      type: "ARENA"
+      material: "TNT_MINECART"
+      icon: "<white><sprite:items:item/tnt_minecart></white>"
+      name: "{icon} &#cdd6f4&lBOXCART"
+      mode-display: "BOXCART"
+      map-display: "Boxcart Arena"
+      lore:
+        - "&#a6adc8Format: &#cdd6f4First to 3 Wins"
+        - "&#a6adc8Queued: &#89b4fa{current_queue}/2"
+        - ""
+        - "{queue_status}"
+      world: "world"
+
+
+# ==============================================================================
+# [5] 1V1 PLAYER DUEL GUI (/duel <player>)
+# ==============================================================================
+duel-menu:
+  title: "&#cdd6f4&lDUEL: &#89b4fa{target_name}"
+  size: 27
+  request-expire-seconds: 60
+
+  filler:
+    enabled: true
+    material: "BLACK_STAINED_GLASS_PANE"
+    name: " "
+
+  target-head:
+    slot: 4
+    name: "&#cdd6f4&lOPPONENT INFO"
+    lore:
+      - "&#a6adc8Player: {target_prefix}&#cdd6f4{target_name}"
+      - "&#a6adc8Mode: {icon} &#cdd6f4{mode}"
+      - "&#a6adc8Map: &#cdd6f4{map}"
+
+  mode-lore:
+    - "&#a6adc8Map: &#cdd6f4{map}"
+    - ""
+    - "{duel_status}"
+  status-selected: "&#a6e3a1✔ Selected"
+  status-unselected: "<glyph:left_click> &#a6adc8Click to select"
+
+  # Shown in Duel GUI when Boxcart (ARENA) mode is selected
+  rounds-button:
+    slot: 20
+    material: "CLOCK"
+    name: "&#89b4fa&lFIRST TO: &#cdd6f4{wins} WINS"
+    min-wins: 1
+    max-wins: 10
+    lore:
+      - "&#a6adc8Target score to win the match: &#89b4fa{wins}"
+      - ""
+      - "<glyph:left_click> &#a6e3a1Left-click: +1 Win"
+      - "<glyph:right_click> &#fab387Right-click: -1 Win"
+
+  map-button:
+    slot: 24
+    material: "PAPER"
+    name: "&#89b4fa&lARENA: &#cdd6f4{arena}"
+    random-display: "Random Available"
+
+  send-button:
+    slot: 22
+    material: "LIME_CONCRETE"
+    name: "&#a6e3a1&lSEND DUEL"
+    lore:
+      - "&#a6adc8Opponent: {target_prefix}&#cdd6f4{target_name}"
+      - "&#a6adc8Mode: {icon} &#cdd6f4{mode}"
+      - "&#a6adc8Map: &#cdd6f4{map} &8| &#a6adc8First to: &#89b4fa{wins}"
+      - ""
+      - "<glyph:left_click> &#a6e3a1Click to send request"
+
+
+# ==============================================================================
+# [6] BOXCART ARENA SETTINGS (Auto-saved in SQLite & Backup YAML)
+# ==============================================================================
+arena-settings:
+  first-to-wins: 3
+  round-countdown-seconds: 3
+  regen-command: "arenaregen regen {arena}"
+
+
+# ==============================================================================
+# [7] SMART SAFETY & ANTI-CRATER ALGORITHM
+# ==============================================================================
+rtp-settings:
+  min-player-distance: 50.0
+  max-terrain-slope: 2
+  max-search-attempts: 60
+
+
+# ==============================================================================
+# [8] MESSAGES & BROADCASTS (Clean Minimalist Style)
+# ==============================================================================
+messages:
+  prefix: "<glyph:warning_blue> "
+
+  countdown-normal: "{prefix}&#a6adc8Resetting &#cdd6f4{display_name} &#a6adc8in &#89b4fa{time}"
+  countdown-warning: "{prefix}&#a6adc8Resetting &#cdd6f4{display_name} &#a6adc8in &#fab387{time}"
+  countdown-urgent: "{prefix}&#f38ba8Resetting {display_name} in {time}"
+  resetting: "{prefix}&#a6adc8Resetting &#cdd6f4{display_name}&#a6adc8..."
+  player-teleported: "{prefix}&#a6adc8Teleported to lobby because &#cdd6f4{display_name} &#a6adc8is resetting."
+  reset-success: "{prefix}&#cdd6f4{display_name} &#a6e3a1has been reset!"
+  next-reset: "{prefix}&#a6adc8Next reset for &#cdd6f4{display_name} &#a6adc8in &#89b4fa{time}"
+
+  admin:
+    no-permission: "{prefix}&#f38ba8No permission."
+    reload-success: "{prefix}&#a6e3a1Config reloaded (&#cdd6f4{count} &#a6e3a1worlds)."
+    manual-reset-single: "{prefix}&#a6adc8Resetting &#cdd6f4{display_name}&#a6adc8..."
+    manual-reset-all: "{prefix}&#a6adc8Resetting all worlds..."
+    world-not-found: "{prefix}&#f38ba8World not found. Available: &#cdd6f4{available}"
+    no-worlds: "{prefix}&#f38ba8No worlds configured."
+
+rtp-messages:
+  no-mode-selected: "{prefix}&#f38ba8Select at least one mode first."
+  joined-queue: "{prefix}&#a6adc8Joined queue: {modes}"
+  left-queue: "{prefix}&#a6adc8Left queue: {modes}"
+  not-in-queue: "{prefix}&#f38ba8You are not in any match or queue."
+  queue-broadcast: "{prefix}&#cdd6f4{player} &#a6adc8is queuing for {modes} &8| &#89b4fa/rtpq"
+  queue-timeout: "{prefix}&#f38ba8Queue timed out ({timeout})."
+
+  queue-waiting-actionbar: "&#a6adc8Queue: {modes} &8| &#a6adc8Time: &#cdd6f4{elapsed}"
+  queue-timeout-actionbar: "&#f38ba8Queue timed out"
+
+  match-found-broadcast:
+    - ""
+    - " &8» &#89b4fa&l1V1 MATCH"
+    - " &8» &#cdd6f4{player1} &#f38ba8vs &#cdd6f4{player2}"
+    - " &8» &#a6adc8Mode: {icon} &#cdd6f4{mode} &8| &#a6adc8Map: &#cdd6f4{map}"
+    - ""
+
+  match-actionbar: "{icon} &#cdd6f4{mode} &8| &#a6adc8vs {opponent_prefix}&#cdd6f4{opponent_name} &8| &#fab387{time}s"
+  match-countdown-subtitle: "{icon} &#cdd6f4{mode}"
+  match-started-title: "&#a6e3a1FIGHT!"
+  match-started-subtitle: "&#a6adc8Good luck"
+
+  teleporting-rtp: "{prefix}&#a6adc8Teleporting to {icon} &#cdd6f4{map}&#a6adc8..."
+  teleport-success: "{prefix}&#a6adc8Teleported to &#cdd6f4{x}, {y}, {z}"
+  safe-loc-not-found: "{prefix}&#f38ba8Could not find a safe location, try again."
+  world-resetting: "{prefix}&#f38ba8Map is currently resetting, please wait a moment!"
+  no-arena-available: "{prefix}&#f38ba8No Boxcart arena is currently available!"
+
+  # Arena First-to-X, 3s Spectator Countdown & Forfeit
+  arena-round-end: "{prefix}&#cdd6f4{winner} &#a6adc8won Round &#89b4fa{round} &#a6adc8(&#a6e3a1{p1_wins}&#a6adc8-&#f38ba8{p2_wins}&#a6adc8, First to &#89b4fa{first_to}&#a6adc8)!"
+  arena-next-round-countdown-sub: "&#a6adc8Next round in &#fab387{time}s &8(&#a6e3a1{p1_wins}&#a6adc8-&#f38ba8{p2_wins}&8)"
+  arena-round-title: "&#89b4faROUND {round}"
+  arena-round-subtitle: "&#cdd6f4{p1} &#a6e3a1{p1_wins} &8- &#f38ba8{p2_wins} &#cdd6f4{p2}"
+  arena-forfeit: "{prefix}&#f38ba8{forfeiter} forfeited the match! &#a6e3a1{winner} wins!"
+  arena-match-end:
+    - ""
+    - " &8» &#a6e3a1&lBOXCART MATCH FINISHED"
+    - " &8» &#a6adc8Winner: &#cdd6f4{winner} &8(&#a6e3a1{w_wins} &8- &#f38ba8{l_wins}&8)"
+    - " &8» &#a6adc8Arena: &#89b4fa{arena}"
+    - ""
+
+  # Duel Messages
+  duel-usage: "{prefix}&#a6adc8Usage: &#cdd6f4/duel <player>"
+  duel-player-not-found: "{prefix}&#f38ba8Player not found."
+  duel-self: "{prefix}&#f38ba8You cannot duel yourself."
+  duel-already-sent: "{prefix}&#f38ba8Request already sent to &#cdd6f4{target}&#f38ba8."
+  duel-busy: "{prefix}&#f38ba8That player is currently in a match."
+  duel-sent: "{prefix}&#a6adc8Duel request ({icon} &#cdd6f4{mode}&#a6adc8, First to &#89b4fa{wins}&#a6adc8) sent to &#cdd6f4{target_name}&#a6adc8."
+  duel-no-pending: "{prefix}&#f38ba8No pending duel request from &#cdd6f4{sender}&#f38ba8."
+  duel-accepted-sender: "{prefix}&#cdd6f4{target_name} &#a6e3a1accepted your duel!"
+  duel-accepted-target: "{prefix}&#a6e3a1Accepted duel from &#cdd6f4{sender_name}&#a6e3a1!"
+  duel-denied-sender: "{prefix}&#cdd6f4{target_name} &#f38ba8declined your duel."
+  duel-denied-target: "{prefix}&#a6adc8Declined duel from &#cdd6f4{sender_name}&#a6adc8."
+  duel-received:
+    - ""
+    - " &8» &#89b4fa&lDUEL REQUEST"
+    - " &8» &#a6adc8From: {sender_prefix}&#cdd6f4{sender_name}"
+    - " &8» &#a6adc8Mode: {icon} &#cdd6f4{mode} &8| &#a6adc8Map: &#cdd6f4{map} &8| &#a6adc8First to: &#89b4fa{wins}"
+    - " &8» <click:run_command:'/duel accept {sender_name}'><hover:show_text:'&#a6e3a1Click to accept'>&#a6e3a1[ACCEPT]</hover></click>  <click:run_command:'/duel deny {sender_name}'><hover:show_text:'&#f38ba8Click to decline'>&#f38ba8[DENY]</hover></click>"
+    - ""
