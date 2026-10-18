@@ -6,6 +6,7 @@ import net.kyori.adventure.title.Title;
 import org.bukkit.*;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
+import org.bukkit.event.inventory.ClickType;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemFlag;
@@ -48,17 +49,21 @@ public class RtpManager {
     public static class DuelGuiHolder implements InventoryHolder {
         public final UUID targetUuid;
         public String selectedModeKey;
+        public int customWins;
+        public String selectedArenaName;
 
-        public DuelGuiHolder(UUID targetUuid, String selectedModeKey) {
+        public DuelGuiHolder(UUID targetUuid, String selectedModeKey, int customWins, String selectedArenaName) {
             this.targetUuid = targetUuid;
             this.selectedModeKey = selectedModeKey;
+            this.customWins = customWins;
+            this.selectedArenaName = selectedArenaName;
         }
 
         @Override
         public @NotNull Inventory getInventory() { return null; }
     }
 
-    public record DuelRequest(UUID senderUuid, String modeKey, long timestamp) {}
+    public record DuelRequest(UUID senderUuid, String modeKey, int customWins, String arenaName, long timestamp) {}
 
     private final RtpResetTimer plugin;
     private final Map<String, RtpItem> rtpItems = new LinkedHashMap<>();
@@ -199,7 +204,15 @@ public class RtpManager {
     }
 
     private String applyPlaceholders(String text, RtpItem item) {
-        if (text == null || item == null) return text != null ? text : "";
+        if (text == null) return "";
+        if (item == null) {
+            String none = plugin.getConfig().getString("rtpq-menu.none-selected", "&#f38ba8None");
+            return text.replace("{display_name}", none)
+                       .replace("{mode}", none)
+                       .replace("{map}", "-")
+                       .replace("{world}", "-")
+                       .replace("{icon}", "");
+        }
         return text.replace("{display_name}", item.name)
                    .replace("{mode}", item.modeDisplay)
                    .replace("{map}", item.mapDisplay)
@@ -207,8 +220,14 @@ public class RtpManager {
                    .replace("{icon}", item.icon);
     }
 
-    private String applyDuelPlaceholders(String text, Player sender, Player target, RtpItem item) {
+    private String applyDuelPlaceholders(String text, Player sender, Player target, RtpItem item, int wins, String arenaName) {
         String s = applyPlaceholders(text, item);
+        String mapLabel = (item != null && item.isArenaMode())
+                ? (arenaName != null ? arenaName : plugin.getConfig().getString("duel-menu.map-button.random-display", "Random Available"))
+                : (item != null ? item.mapDisplay : "-");
+        s = s.replace("{wins}", String.valueOf(wins))
+             .replace("{arena}", mapLabel)
+             .replace("{map}", mapLabel);
         if (sender != null) s = s.replace("{sender_name}", sender.getName()).replace("{sender_prefix}", getPlayerPrefix(sender));
         if (target != null) s = s.replace("{target_name}", target.getName()).replace("{target_prefix}", getPlayerPrefix(target)).replace("{target}", target.getName());
         return s;
@@ -397,7 +416,7 @@ public class RtpManager {
                     reservedArena = plugin.getArenaManager().reserveAvailableArena();
                     if (reservedArena == null) {
                         Component noArena = plugin.toComponent(plugin.getMsg("rtp-messages.no-arena-available",
-                                "{prefix}&#f38ba8All Boxcart arenas are currently in use! Please wait."));
+                                "{prefix}&#f38ba8No Boxcart arena is currently available!"));
                         player.sendMessage(noArena);
                         opponent.sendMessage(noArena);
                         continue;
@@ -410,7 +429,8 @@ public class RtpManager {
                 }
                 queueJoinTime.remove(uuid);
                 queueJoinTime.remove(opponent.getUniqueId());
-                startMatchmaking(opponent, player, chosenItem, reservedArena);
+                int defWins = plugin.getConfig().getInt("arena-settings.first-to-wins", 3);
+                startMatchmaking(opponent, player, chosenItem, reservedArena, defWins);
                 return;
             }
         }
@@ -423,34 +443,48 @@ public class RtpManager {
                 .replace("{player}", player.getName()).replace("{modes}", modesWithCount)));
     }
 
-    public void openDuelGui(Player sender, Player target, String modeKey) {
+    // ==================== MENU DUEL: KHÔNG AUTO-SELECT, CHỌN WINS & CHỌN MAP ====================
+    public void openDuelGui(Player sender, Player target, String modeKey, int customWins, String selectedArenaName) {
         if (rtpqItems.isEmpty()) return;
-        if (modeKey == null || !rtpqItems.containsKey(modeKey)) {
-            modeKey = rtpqItems.keySet().iterator().next();
-        }
-        RtpItem selectedItem = rtpqItems.get(modeKey);
+        int defWins = Math.max(1, plugin.getConfig().getInt("arena-settings.first-to-wins", 3));
+        if (customWins <= 0) customWins = defWins;
 
-        String rawTitle = applyDuelPlaceholders(plugin.getConfig().getString("duel-menu.title", "&#cdd6f4&lDUEL: &#89b4fa{target_name}"), sender, target, selectedItem);
+        RtpItem selectedItem = modeKey != null ? rtpqItems.get(modeKey) : null;
+
+        // Nếu Arena đã chọn bị người khác vào chơi, tự động chuyển về Random Available
+        if (selectedArenaName != null) {
+            ArenaManager.Arena check = plugin.getArenaManager().getArena(selectedArenaName);
+            if (check == null || check.inUse || !check.isReadyForMatch()) {
+                selectedArenaName = null;
+            }
+        }
+
+        String rawTitle = applyDuelPlaceholders(plugin.getConfig().getString("duel-menu.title", "&#cdd6f4&lDUEL: &#89b4fa{target_name}"),
+                sender, target, selectedItem, customWins, selectedArenaName);
         int size = plugin.getConfig().getInt("duel-menu.size", 27);
-        Inventory inv = Bukkit.createInventory(new DuelGuiHolder(target.getUniqueId(), modeKey), size, plugin.toComponent(rawTitle));
+        Inventory inv = Bukkit.createInventory(new DuelGuiHolder(target.getUniqueId(), modeKey, customWins, selectedArenaName),
+                size, plugin.toComponent(rawTitle));
         applyFiller(inv, "duel-menu");
 
+        // 1. Đầu đối thủ (Slot 4)
         int headSlot = plugin.getConfig().getInt("duel-menu.target-head.slot", 4);
         ItemStack head = new ItemStack(Material.PLAYER_HEAD);
         SkullMeta skullMeta = (SkullMeta) head.getItemMeta();
         if (skullMeta != null) {
             skullMeta.setOwningPlayer(target);
-            String headName = applyDuelPlaceholders(plugin.getConfig().getString("duel-menu.target-head.name", "&#cdd6f4&lOPPONENT INFO"), sender, target, selectedItem);
+            String headName = applyDuelPlaceholders(plugin.getConfig().getString("duel-menu.target-head.name", "&#cdd6f4&lOPPONENT INFO"),
+                    sender, target, selectedItem, customWins, selectedArenaName);
             skullMeta.displayName(plugin.toComponent(headName).decoration(TextDecoration.ITALIC, false));
             List<Component> hLore = new ArrayList<>();
             for (String l : plugin.getConfig().getStringList("duel-menu.target-head.lore")) {
-                hLore.add(plugin.toComponent(applyDuelPlaceholders(l, sender, target, selectedItem)).decoration(TextDecoration.ITALIC, false));
+                hLore.add(plugin.toComponent(applyDuelPlaceholders(l, sender, target, selectedItem, customWins, selectedArenaName)).decoration(TextDecoration.ITALIC, false));
             }
             skullMeta.lore(hLore);
             head.setItemMeta(skullMeta);
         }
         if (headSlot >= 0 && headSlot < size) inv.setItem(headSlot, head);
 
+        // 2. Các chế độ (Không auto-select lúc mới mở)
         String statusSel = plugin.getConfig().getString("duel-menu.status-selected", "&#a6e3a1✔ Selected");
         String statusUnsel = plugin.getConfig().getString("duel-menu.status-unselected", "<glyph:left_click> &#a6adc8Click to select");
         List<String> modeLoreCfg = plugin.getConfig().getStringList("duel-menu.mode-lore");
@@ -464,7 +498,8 @@ public class RtpManager {
                 meta.setEnchantmentGlintOverride(isSel);
                 List<Component> mLore = new ArrayList<>();
                 for (String l : modeLoreCfg) {
-                    String line = applyDuelPlaceholders(l, sender, target, item).replace("{duel_status}", isSel ? statusSel : statusUnsel);
+                    String line = applyDuelPlaceholders(l, sender, target, item, customWins, selectedArenaName)
+                            .replace("{duel_status}", isSel ? statusSel : statusUnsel);
                     mLore.add(plugin.toComponent(line).decoration(TextDecoration.ITALIC, false));
                 }
                 meta.lore(mLore);
@@ -474,16 +509,69 @@ public class RtpManager {
             if (item.slot >= 0 && item.slot < size) inv.setItem(item.slot, is);
         }
 
+        // 3. Nếu đang chọn chế độ Boxcart (ARENA) -> Hiện nút Chỉnh số Win (Slot 20) & Chọn Map (Slot 24)
+        if (selectedItem != null && selectedItem.isArenaMode()) {
+            int rSlot = plugin.getConfig().getInt("duel-menu.rounds-button.slot", 20);
+            Material rMat = Material.matchMaterial(plugin.getConfig().getString("duel-menu.rounds-button.material", "CLOCK").toUpperCase());
+            ItemStack rBtn = new ItemStack(rMat != null ? rMat : Material.CLOCK, Math.min(64, customWins));
+            ItemMeta rMeta = rBtn.getItemMeta();
+            if (rMeta != null) {
+                String rName = applyDuelPlaceholders(plugin.getConfig().getString("duel-menu.rounds-button.name", "&#89b4fa&lFIRST TO: &#cdd6f4{wins} WINS"),
+                        sender, target, selectedItem, customWins, selectedArenaName);
+                rMeta.displayName(plugin.toComponent(rName).decoration(TextDecoration.ITALIC, false));
+                List<Component> rLore = new ArrayList<>();
+                for (String l : plugin.getConfig().getStringList("duel-menu.rounds-button.lore")) {
+                    rLore.add(plugin.toComponent(applyDuelPlaceholders(l, sender, target, selectedItem, customWins, selectedArenaName)).decoration(TextDecoration.ITALIC, false));
+                }
+                rMeta.lore(rLore);
+                rBtn.setItemMeta(rMeta);
+            }
+            if (rSlot >= 0 && rSlot < size) inv.setItem(rSlot, rBtn);
+
+            int mSlot = plugin.getConfig().getInt("duel-menu.map-button.slot", 24);
+            Material mMat = Material.matchMaterial(plugin.getConfig().getString("duel-menu.map-button.material", "PAPER").toUpperCase());
+            ItemStack mBtn = new ItemStack(mMat != null ? mMat : Material.PAPER);
+            ItemMeta mMeta = mBtn.getItemMeta();
+            if (mMeta != null) {
+                String mName = applyDuelPlaceholders(plugin.getConfig().getString("duel-menu.map-button.name", "&#89b4fa&lARENA: &#cdd6f4{arena}"),
+                        sender, target, selectedItem, customWins, selectedArenaName);
+                mMeta.displayName(plugin.toComponent(mName).decoration(TextDecoration.ITALIC, false));
+
+                List<Component> mLore = new ArrayList<>();
+                String randDisp = plugin.getConfig().getString("duel-menu.map-button.random-display", "Random Available");
+                mLore.add(plugin.toComponent((selectedArenaName == null ? "&#a6e3a1▶ " : "&#a6adc8• ") + randDisp).decoration(TextDecoration.ITALIC, false));
+
+                for (ArenaManager.Arena a : plugin.getArenaManager().getAllArenas()) {
+                    if (a.inUse) {
+                        mLore.add(plugin.toComponent("&#f38ba8✖ " + a.name + " &8(In Match)").decoration(TextDecoration.ITALIC, false));
+                    } else if (!a.isReadyForMatch()) {
+                        mLore.add(plugin.toComponent("&#f38ba8✖ " + a.name + " &8(Incomplete)").decoration(TextDecoration.ITALIC, false));
+                    } else if (a.name.equalsIgnoreCase(selectedArenaName)) {
+                        mLore.add(plugin.toComponent("&#a6e3a1▶ " + a.name + " &8(Selected)").decoration(TextDecoration.ITALIC, false));
+                    } else {
+                        mLore.add(plugin.toComponent("&#a6adc8• " + a.name + " &8(Available)").decoration(TextDecoration.ITALIC, false));
+                    }
+                }
+                mLore.add(Component.empty());
+                mLore.add(plugin.toComponent("<glyph:left_click> &#a6e3a1Click to cycle available arenas").decoration(TextDecoration.ITALIC, false));
+                mMeta.lore(mLore);
+                mBtn.setItemMeta(mMeta);
+            }
+            if (mSlot >= 0 && mSlot < size) inv.setItem(mSlot, mBtn);
+        }
+
+        // 4. Nút Gửi lời mời Duel (Slot 22)
         int sendSlot = plugin.getConfig().getInt("duel-menu.send-button.slot", 22);
         Material sendMat = Material.matchMaterial(plugin.getConfig().getString("duel-menu.send-button.material", "LIME_CONCRETE").toUpperCase());
         ItemStack sendBtn = new ItemStack(sendMat != null ? sendMat : Material.LIME_CONCRETE);
         ItemMeta sendMeta = sendBtn.getItemMeta();
         if (sendMeta != null) {
-            String sName = applyDuelPlaceholders(plugin.getConfig().getString("duel-menu.send-button.name", "&#a6e3a1&lSEND DUEL"), sender, target, selectedItem);
+            String sName = applyDuelPlaceholders(plugin.getConfig().getString("duel-menu.send-button.name", "&#a6e3a1&lSEND DUEL"),
+                    sender, target, selectedItem, customWins, selectedArenaName);
             sendMeta.displayName(plugin.toComponent(sName).decoration(TextDecoration.ITALIC, false));
             List<Component> sLore = new ArrayList<>();
             for (String l : plugin.getConfig().getStringList("duel-menu.send-button.lore")) {
-                sLore.add(plugin.toComponent(applyDuelPlaceholders(l, sender, target, selectedItem)).decoration(TextDecoration.ITALIC, false));
+                sLore.add(plugin.toComponent(applyDuelPlaceholders(l, sender, target, selectedItem, customWins, selectedArenaName)).decoration(TextDecoration.ITALIC, false));
             }
             sendMeta.lore(sLore);
             sendBtn.setItemMeta(sendMeta);
@@ -493,7 +581,7 @@ public class RtpManager {
         sender.openInventory(inv);
     }
 
-    public void handleDuelGuiClick(Player sender, DuelGuiHolder holder, int slot) {
+    public void handleDuelGuiClick(Player sender, DuelGuiHolder holder, int slot, ClickType click) {
         Player target = Bukkit.getPlayer(holder.targetUuid);
         if (target == null || !target.isOnline()) {
             sender.closeInventory();
@@ -504,16 +592,53 @@ public class RtpManager {
         for (RtpItem item : rtpqItems.values()) {
             if (item.slot == slot) {
                 sender.playSound(sender.getLocation(), Sound.UI_BUTTON_CLICK, 1f, 1.2f);
-                openDuelGui(sender, target, item.key);
+                openDuelGui(sender, target, item.key, holder.customWins, holder.selectedArenaName);
+                return;
+            }
+        }
+
+        RtpItem selected = holder.selectedModeKey != null ? rtpqItems.get(holder.selectedModeKey) : null;
+
+        if (selected != null && selected.isArenaMode()) {
+            int rSlot = plugin.getConfig().getInt("duel-menu.rounds-button.slot", 20);
+            int mSlot = plugin.getConfig().getInt("duel-menu.map-button.slot", 24);
+
+            if (slot == rSlot) {
+                int minW = plugin.getConfig().getInt("duel-menu.rounds-button.min-wins", 1);
+                int maxW = plugin.getConfig().getInt("duel-menu.rounds-button.max-wins", 10);
+                int nextWins = click.isRightClick() ? holder.customWins - 1 : holder.customWins + 1;
+                if (nextWins > maxW) nextWins = minW;
+                if (nextWins < minW) nextWins = maxW;
+                sender.playSound(sender.getLocation(), Sound.UI_BUTTON_CLICK, 1f, 1.2f);
+                openDuelGui(sender, target, holder.selectedModeKey, nextWins, holder.selectedArenaName);
+                return;
+            }
+
+            if (slot == mSlot) {
+                List<String> availableNames = new ArrayList<>();
+                availableNames.add(null); // null = Random Available
+                for (ArenaManager.Arena a : plugin.getArenaManager().getAllArenas()) {
+                    if (!a.inUse && a.isReadyForMatch()) {
+                        availableNames.add(a.name);
+                    }
+                }
+                int idx = availableNames.indexOf(holder.selectedArenaName);
+                String nextArena = availableNames.get((idx + 1) % availableNames.size());
+                sender.playSound(sender.getLocation(), Sound.UI_BUTTON_CLICK, 1f, 1.2f);
+                openDuelGui(sender, target, holder.selectedModeKey, holder.customWins, nextArena);
                 return;
             }
         }
 
         int sendSlot = plugin.getConfig().getInt("duel-menu.send-button.slot", 22);
         if (slot == sendSlot) {
+            if (selected == null) {
+                sender.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.no-mode-selected", "{prefix}&#f38ba8Select at least one mode first.")));
+                sender.playSound(sender.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
+                return;
+            }
             sender.closeInventory();
-            RtpItem selected = rtpqItems.get(holder.selectedModeKey);
-            if (selected != null) sendDuelRequest(sender, target, selected);
+            sendDuelRequest(sender, target, selected, holder.customWins, holder.selectedArenaName);
         }
     }
 
@@ -551,10 +676,12 @@ public class RtpManager {
             player.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.duel-busy", "{prefix}&#f38ba8That player is currently in a match.")));
             return;
         }
-        openDuelGui(player, target, null);
+        int defWins = plugin.getConfig().getInt("arena-settings.first-to-wins", 3);
+        // Mở GUI Duel với modeKey = null (Không tự động chọn HT KIT)
+        openDuelGui(player, target, null, defWins, null);
     }
 
-    private void sendDuelRequest(Player sender, Player target, RtpItem item) {
+    private void sendDuelRequest(Player sender, Player target, RtpItem item, int customWins, String arenaName) {
         if (inCountdown.contains(sender.getUniqueId()) || inCountdown.contains(target.getUniqueId())
                 || plugin.getArenaManager().isInMatch(sender.getUniqueId()) || plugin.getArenaManager().isInMatch(target.getUniqueId())) {
             sender.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.duel-busy", "{prefix}&#f38ba8Player is busy.")));
@@ -567,16 +694,18 @@ public class RtpManager {
 
         DuelRequest existing = targetReqs.get(sender.getUniqueId());
         if (existing != null && (now - existing.timestamp()) < expireSec * 1000L) {
-            sender.sendMessage(plugin.toComponent(applyDuelPlaceholders(plugin.getMsg("rtp-messages.duel-already-sent", "{prefix}&#f38ba8Request already sent."), sender, target, item)));
+            sender.sendMessage(plugin.toComponent(applyDuelPlaceholders(plugin.getMsg("rtp-messages.duel-already-sent", "{prefix}&#f38ba8Request already sent."),
+                    sender, target, item, customWins, arenaName)));
             return;
         }
 
-        targetReqs.put(sender.getUniqueId(), new DuelRequest(sender.getUniqueId(), item.key, now));
-        sender.sendMessage(plugin.toComponent(applyDuelPlaceholders(plugin.getMsg("rtp-messages.duel-sent", "{prefix}&#a6adc8Duel request sent."), sender, target, item)));
+        targetReqs.put(sender.getUniqueId(), new DuelRequest(sender.getUniqueId(), item.key, customWins, arenaName, now));
+        sender.sendMessage(plugin.toComponent(applyDuelPlaceholders(plugin.getMsg("rtp-messages.duel-sent", "{prefix}&#a6adc8Duel request sent."),
+                sender, target, item, customWins, arenaName)));
         sender.playSound(sender.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1.2f);
 
         for (String line : plugin.getConfig().getStringList("rtp-messages.duel-received")) {
-            target.sendMessage(plugin.toComponent(applyDuelPlaceholders(line, sender, target, item)));
+            target.sendMessage(plugin.toComponent(applyDuelPlaceholders(line, sender, target, item, customWins, arenaName)));
         }
         target.playSound(target.getLocation(), Sound.BLOCK_NOTE_BLOCK_BELL, 1f, 1.2f);
     }
@@ -595,8 +724,10 @@ public class RtpManager {
         if (item == null) return;
 
         if (!accept) {
-            target.sendMessage(plugin.toComponent(applyDuelPlaceholders(plugin.getMsg("rtp-messages.duel-denied-target", "{prefix}&#a6adc8Declined duel."), sender, target, item)));
-            sender.sendMessage(plugin.toComponent(applyDuelPlaceholders(plugin.getMsg("rtp-messages.duel-denied-sender", "{prefix}&#f38ba8Duel declined."), sender, target, item)));
+            target.sendMessage(plugin.toComponent(applyDuelPlaceholders(plugin.getMsg("rtp-messages.duel-denied-target", "{prefix}&#a6adc8Declined duel."),
+                    sender, target, item, req.customWins(), req.arenaName())));
+            sender.sendMessage(plugin.toComponent(applyDuelPlaceholders(plugin.getMsg("rtp-messages.duel-denied-sender", "{prefix}&#f38ba8Duel declined."),
+                    sender, target, item, req.customWins(), req.arenaName())));
             return;
         }
 
@@ -608,10 +739,10 @@ public class RtpManager {
 
         ArenaManager.Arena reservedArena = null;
         if (item.isArenaMode()) {
-            reservedArena = plugin.getArenaManager().reserveAvailableArena();
+            reservedArena = plugin.getArenaManager().reserveArena(req.arenaName());
             if (reservedArena == null) {
                 Component noArena = plugin.toComponent(plugin.getMsg("rtp-messages.no-arena-available",
-                        "{prefix}&#f38ba8All Boxcart arenas are currently in use! Please wait."));
+                        "{prefix}&#f38ba8Selected arena is currently in use! Please try again."));
                 target.sendMessage(noArena);
                 sender.sendMessage(noArena);
                 return;
@@ -625,10 +756,12 @@ public class RtpManager {
         queueJoinTime.remove(sender.getUniqueId());
         queueJoinTime.remove(target.getUniqueId());
 
-        target.sendMessage(plugin.toComponent(applyDuelPlaceholders(plugin.getMsg("rtp-messages.duel-accepted-target", "{prefix}&#a6e3a1Accepted duel!"), sender, target, item)));
-        sender.sendMessage(plugin.toComponent(applyDuelPlaceholders(plugin.getMsg("rtp-messages.duel-accepted-sender", "{prefix}&#a6e3a1Duel accepted!"), sender, target, item)));
+        target.sendMessage(plugin.toComponent(applyDuelPlaceholders(plugin.getMsg("rtp-messages.duel-accepted-target", "{prefix}&#a6e3a1Accepted duel!"),
+                sender, target, item, req.customWins(), req.arenaName())));
+        sender.sendMessage(plugin.toComponent(applyDuelPlaceholders(plugin.getMsg("rtp-messages.duel-accepted-sender", "{prefix}&#a6e3a1Duel accepted!"),
+                sender, target, item, req.customWins(), req.arenaName())));
 
-        startMatchmaking(sender, target, item, reservedArena);
+        startMatchmaking(sender, target, item, reservedArena, req.customWins());
     }
 
     public void handleRtpClick(Player player, int slot) {
@@ -651,7 +784,7 @@ public class RtpManager {
             player.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.left-queue", "{prefix}&#a6adc8Left queue: {modes}").replace("{modes}", modesStr)));
             return true;
         }
-        player.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.not-in-queue", "{prefix}&#f38ba8You are not in any queue.")));
+        player.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.not-in-queue", "{prefix}&#f38ba8You are not in any match or queue.")));
         return false;
     }
 
@@ -662,7 +795,7 @@ public class RtpManager {
         inCountdown.remove(uuid);
     }
 
-    private void startMatchmaking(Player p1, Player p2, RtpItem item, ArenaManager.Arena reservedArena) {
+    private void startMatchmaking(Player p1, Player p2, RtpItem item, ArenaManager.Arena reservedArena, int customWins) {
         p1.closeInventory();
         p2.closeInventory();
         inCountdown.add(p1.getUniqueId());
@@ -709,7 +842,7 @@ public class RtpManager {
                     inCountdown.remove(p2.getUniqueId());
                     cancel();
                     if (reservedArena != null) {
-                        plugin.getArenaManager().startArenaMatch(p1, p2, reservedArena, item);
+                        plugin.getArenaManager().startArenaMatch(p1, p2, reservedArena, item, customWins);
                     } else {
                         teleportMatch(p1, p2, item);
                     }
@@ -863,5 +996,4 @@ public class RtpManager {
         }
         return "";
     }
-            }
-                                                                        
+}
