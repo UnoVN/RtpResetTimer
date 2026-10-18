@@ -81,9 +81,10 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         if (getCommand("rtp") != null) getCommand("rtp").setExecutor(this);
         if (getCommand("rtpq") != null) getCommand("rtpq").setExecutor(this);
         if (getCommand("duel") != null) getCommand("duel").setExecutor(this);
+        if (getCommand("forfeit") != null) getCommand("forfeit").setExecutor(this);
 
         startTimerLoop();
-        getLogger().info("RtpResetTimer 1.4.0 (Boxcart Arena Edition) enabled!");
+        getLogger().info("RtpResetTimer 1.5.0 (SQLite Arena & FT3 Edition) enabled!");
     }
 
     @Override
@@ -167,7 +168,7 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         }
 
         if (rtpManager != null) rtpManager.loadConfig();
-        if (arenaManager != null) arenaManager.loadArenas();
+        if (arenaManager != null) arenaManager.loadArenasFromDb();
     }
 
     public int getRemainingSeconds() {
@@ -424,8 +425,10 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
 
         if (command.getName().equalsIgnoreCase("rtpq")) {
             if (!(sender instanceof Player player)) return true;
-            if (args.length > 0 && args[0].equalsIgnoreCase("leave")) {
-                rtpManager.leaveQueueCommand(player);
+            if (args.length > 0 && (args[0].equalsIgnoreCase("leave") || args[0].equalsIgnoreCase("forfeit"))) {
+                if (!arenaManager.forfeitMatch(player)) {
+                    rtpManager.leaveQueueCommand(player);
+                }
                 return true;
             }
             rtpManager.openRtpQueueGui(player);
@@ -434,7 +437,21 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
 
         if (command.getName().equalsIgnoreCase("duel")) {
             if (!(sender instanceof Player player)) return true;
+            if (args.length > 0 && (args[0].equalsIgnoreCase("leave") || args[0].equalsIgnoreCase("forfeit"))) {
+                if (!arenaManager.forfeitMatch(player)) {
+                    rtpManager.leaveQueueCommand(player);
+                }
+                return true;
+            }
             rtpManager.handleDuelCommand(player, args);
+            return true;
+        }
+
+        if (command.getName().equalsIgnoreCase("forfeit")) {
+            if (!(sender instanceof Player player)) return true;
+            if (!arenaManager.forfeitMatch(player)) {
+                rtpManager.leaveQueueCommand(player);
+            }
             return true;
         }
 
@@ -492,4 +509,4 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         }
         return true;
     }
-                }
+}
