@@ -18,12 +18,14 @@ lobby-spawn:
 # ==============================================================================
 # [2] AUTOMATED WORLD RESET (SlimeWorldManager - 1.21.11)
 # ==============================================================================
+# Global default: true = only players in that world see reset messages
+broadcast-only-in-world: true
+
 worlds:
   desert:
     target-world: "rtpdesert"
     display-name: "RTP Desert"
     reset-interval-seconds: 1800
-    # true = Only players currently in this world see reset countdowns & messages
     broadcast-only-in-world: true
 
     worldborder:
@@ -35,6 +37,24 @@ worlds:
       - "time set day"
       - "gamerule locator_bar false"
       - "gamerule advance_time false"
+
+  ffa_eco:
+    target-world: "ffa_eco"
+    display-name: "FFA ECO"
+    reset-interval-seconds: 1800
+    broadcast-only-in-world: true
+
+    worldborder:
+      center-x: -78.5
+      center-z: 11.5
+      size: 211
+
+    post-reset-commands:
+      - "time set day"
+      - "gamerule locator_bar false"
+      - "gamerule advance_time false"
+      - "npc move_to kit_eco -81.5 32 13.5 ffa_eco"
+      - "npc move_to faq_eco -75.5 32 13.5 ffa_eco"
 
 
 # ==============================================================================
@@ -71,7 +91,7 @@ rtp-menu:
 # [4] 1V1 & 2V2 BATTLE QUEUE GUI (/rtpq or /rtpqueue)
 # ==============================================================================
 rtpq-menu:
-  title: "&#cdd6f4&lBATTLE QUEUE &8({queue_type})"
+  title: "&#cdd6f4&l{queue_type} BATTLE QUEUE"
   size: 27
   countdown-seconds: 5
   player-gap: 8
@@ -92,22 +112,22 @@ rtpq-menu:
   solo-button:
     slot: 3
     material: "IRON_SWORD"
-    name: "&#89b4fa&lSOLO &8(1v1)"
+    name: "&#89b4fa&lSOLO QUEUE &8(1v1)"
     lore:
-      - "&#a6adc8Mode: &#cdd6f41v1 Solo Queue"
+      - "&#a6adc8Mode: &#cdd6f41v1 Solo"
       - ""
       - "{type_status}"
 
   team-button:
     slot: 5
     material: "DIAMOND_SWORD"
-    name: "&#fab387&lTEAM &8(2v2)"
+    name: "&#fab387&lTEAM QUEUE &8(2v2)"
     lore:
-      - "&#a6adc8Mode: &#cdd6f42v2 Team Queue"
+      - "&#a6adc8Mode: &#cdd6f42v2 Team"
       - ""
       - "{type_status}"
 
-  type-status-active: "&#a6e3a1✔ Viewing"
+  type-status-active: "&#a6e3a1✔ Currently Viewing"
   type-status-inactive: "<glyph:left_click> &#a6adc8Click to switch"
 
   confirm-button:
@@ -129,7 +149,6 @@ rtpq-menu:
       - ""
       - "<glyph:left_click> &#f38ba8Click to leave queue"
 
-  # Non-bold circle numbers for clean visibility
   countdown-titles:
     5: "&#f38ba8❺"
     4: "&#f38ba8❹"
@@ -137,6 +156,7 @@ rtpq-menu:
     2: "&#fab387❷"
     1: "&#a6e3a1❶"
 
+  # Each mode below can have its own custom world, map-display, and coordinates
   items:
     ht_kit:
       slot: 10
@@ -148,7 +168,7 @@ rtpq-menu:
       map-display: "RTP Desert"
       lore:
         - "&#a6adc8Map: &#cdd6f4{map}"
-        - "&#a6adc8Queue ({queue_type}): &#89b4fa{current_queue}/{max_queue}"
+        - "&#a6adc8Queued ({queue_type}): &#89b4fa{current_queue}/{max_queue}"
         - ""
         - "{queue_status}"
       world: "rtpdesert"
@@ -167,7 +187,7 @@ rtpq-menu:
       map-display: "RTP Desert"
       lore:
         - "&#a6adc8Map: &#cdd6f4{map}"
-        - "&#a6adc8Queue ({queue_type}): &#89b4fa{current_queue}/{max_queue}"
+        - "&#a6adc8Queued ({queue_type}): &#89b4fa{current_queue}/{max_queue}"
         - ""
         - "{queue_status}"
       world: "rtpdesert"
@@ -186,7 +206,7 @@ rtpq-menu:
       map-display: "RTP Desert"
       lore:
         - "&#a6adc8Map: &#cdd6f4{map}"
-        - "&#a6adc8Queue ({queue_type}): &#89b4fa{current_queue}/{max_queue}"
+        - "&#a6adc8Queued ({queue_type}): &#89b4fa{current_queue}/{max_queue}"
         - ""
         - "{queue_status}"
       world: "rtpdesert"
@@ -205,7 +225,7 @@ rtpq-menu:
       map-display: "Boxcart Arena"
       lore:
         - "&#a6adc8Format: &#cdd6f4First to 3 Wins"
-        - "&#a6adc8Queue ({queue_type}): &#89b4fa{current_queue}/{max_queue}"
+        - "&#a6adc8Queued ({queue_type}): &#89b4fa{current_queue}/{max_queue}"
         - ""
         - "{queue_status}"
       world: "world"
@@ -239,7 +259,6 @@ duel-menu:
   status-selected: "&#a6e3a1✔ Selected"
   status-unselected: "<glyph:left_click> &#a6adc8Click to select"
 
-  # Shown in Duel GUI when Boxcart (ARENA) mode is selected
   rounds-button:
     slot: 20
     material: "CLOCK"
@@ -340,7 +359,6 @@ rtp-messages:
   world-resetting: "{prefix}&#f38ba8Map is currently resetting, please wait a moment!"
   no-arena-available: "{prefix}&#f38ba8No Boxcart arena is currently available!"
 
-  # Arena First-to-X, 3s Spectator Countdown & Forfeit
   arena-round-end: "{prefix}&#cdd6f4{winner} &#a6adc8won Round &#89b4fa{round} &#a6adc8(&#a6e3a1{p1_wins}&#a6adc8-&#f38ba8{p2_wins}&#a6adc8, First to &#89b4fa{first_to}&#a6adc8)!"
   arena-next-round-countdown-sub: "&#a6adc8Next round in &#fab387{time}s &8(&#a6e3a1{p1_wins}&#a6adc8-&#f38ba8{p2_wins}&8)"
   arena-round-title: "&#89b4faROUND {round}"
@@ -353,7 +371,6 @@ rtp-messages:
     - " &8» &#a6adc8Arena: &#89b4fa{arena}"
     - ""
 
-  # Duel Messages
   duel-usage: "{prefix}&#a6adc8Usage: &#cdd6f4/duel <player>"
   duel-player-not-found: "{prefix}&#f38ba8Player not found."
   duel-self: "{prefix}&#f38ba8You cannot duel yourself."
