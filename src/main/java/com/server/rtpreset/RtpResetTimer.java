@@ -27,11 +27,13 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         public String key, targetWorld, displayName;
         public int resetIntervalSeconds, remainingSeconds;
         public double borderCenterX, borderCenterZ, borderSize;
+        public boolean broadcastOnlyInWorld;
         public List<String> postResetCommands;
         public boolean isResetting = false;
 
         public WorldProfile(String key, String targetWorld, String displayName, int resetIntervalSeconds,
-                            double borderCenterX, double borderCenterZ, double borderSize, List<String> postResetCommands) {
+                            double borderCenterX, double borderCenterZ, double borderSize,
+                            boolean broadcastOnlyInWorld, List<String> postResetCommands) {
             this.key = key;
             this.targetWorld = targetWorld;
             this.displayName = displayName;
@@ -40,6 +42,7 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
             this.borderCenterX = borderCenterX;
             this.borderCenterZ = borderCenterZ;
             this.borderSize = borderSize;
+            this.broadcastOnlyInWorld = broadcastOnlyInWorld;
             this.postResetCommands = postResetCommands != null ? postResetCommands : Collections.emptyList();
         }
     }
@@ -84,7 +87,7 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         if (getCommand("forfeit") != null) getCommand("forfeit").setExecutor(this);
 
         startTimerLoop();
-        getLogger().info("RtpResetTimer 1.5.0 (SQLite Arena & FT3 Edition) enabled!");
+        getLogger().info("RtpResetTimer 1.5.0 (SQLite Arena, 1v1/2v2 & EcoCart Edition) enabled!");
     }
 
     @Override
@@ -147,6 +150,8 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         this.msgAdminWorldNotFound = getConfig().getString("messages.admin.world-not-found", "{prefix}&#f38ba8World not found. Available: &#cdd6f4{available}");
         this.msgAdminNoWorlds = getConfig().getString("messages.admin.no-worlds", "{prefix}&#f38ba8No worlds configured.");
 
+        boolean globalOnlyInWorld = getConfig().getBoolean("broadcast-only-in-world", true);
+
         ConfigurationSection section = getConfig().getConfigurationSection("worlds");
         if (section != null) {
             for (String key : section.getKeys(false)) {
@@ -156,9 +161,10 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
                 double bX = section.getDouble(key + ".worldborder.center-x", 420.0);
                 double bZ = section.getDouble(key + ".worldborder.center-z", -455.0);
                 double bSize = section.getDouble(key + ".worldborder.size", 838.0);
+                boolean onlyInWorld = section.getBoolean(key + ".broadcast-only-in-world", globalOnlyInWorld);
                 List<String> cmds = section.getStringList(key + ".post-reset-commands");
 
-                WorldProfile profile = new WorldProfile(key, target, display, interval, bX, bZ, bSize, cmds);
+                WorldProfile profile = new WorldProfile(key, target, display, interval, bX, bZ, bSize, onlyInWorld, cmds);
                 worldProfiles.put(key.toLowerCase(), profile);
                 if (defaultWorldKey == null) defaultWorldKey = key.toLowerCase();
 
@@ -262,8 +268,20 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         return toComponent(res);
     }
 
-    private void broadcast(Component formattedMessage) {
-        Bukkit.broadcast(formattedMessage);
+    private void broadcastWorld(WorldProfile profile, Component formattedMessage, Set<UUID> extraRecipients) {
+        if (profile == null || !profile.broadcastOnlyInWorld) {
+            Bukkit.broadcast(formattedMessage);
+            return;
+        }
+        World target = Bukkit.getWorld(profile.targetWorld);
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            boolean inTarget = (target != null && p.getWorld().equals(target));
+            boolean inExtra = (extraRecipients != null && extraRecipients.contains(p.getUniqueId()));
+            if (inTarget || inExtra) {
+                p.sendMessage(formattedMessage);
+            }
+        }
+        Bukkit.getConsoleSender().sendMessage(formattedMessage);
     }
 
     private String formatDuration(int totalSeconds) {
@@ -284,11 +302,11 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
 
                     switch (profile.remainingSeconds) {
                         case 1200, 900, 600, 300, 180 ->
-                                broadcast(formatMessage(msgCountdownNormal, profile, formatDuration(profile.remainingSeconds)));
+                                broadcastWorld(profile, formatMessage(msgCountdownNormal, profile, formatDuration(profile.remainingSeconds)), null);
                         case 60, 30 ->
-                                broadcast(formatMessage(msgCountdownWarning, profile, formatDuration(profile.remainingSeconds)));
+                                broadcastWorld(profile, formatMessage(msgCountdownWarning, profile, formatDuration(profile.remainingSeconds)), null);
                         case 5, 4, 3, 2, 1 ->
-                                broadcast(formatMessage(msgCountdownUrgent, profile, profile.remainingSeconds + "s"));
+                                broadcastWorld(profile, formatMessage(msgCountdownUrgent, profile, profile.remainingSeconds + "s"), null);
                     }
 
                     if (profile.remainingSeconds <= 0) {
@@ -347,17 +365,21 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         profile.remainingSeconds = 0;
 
         try {
-            broadcast(formatMessage(msgResetting, profile, null));
-
+            Set<UUID> evacuatedPlayers = new HashSet<>();
             Location lobbyLocation = getLobbyLocation();
             World targetWorldObj = Bukkit.getWorld(profile.targetWorld);
 
-            if (targetWorldObj != null && lobbyLocation != null) {
+            if (targetWorldObj != null) {
                 for (Player player : new ArrayList<>(targetWorldObj.getPlayers())) {
-                    player.teleport(lobbyLocation);
-                    player.sendMessage(formatMessage(msgPlayerTeleported, profile, null));
+                    evacuatedPlayers.add(player.getUniqueId());
+                    if (lobbyLocation != null) {
+                        player.teleport(lobbyLocation);
+                        player.sendMessage(formatMessage(msgPlayerTeleported, profile, null));
+                    }
                 }
             }
+
+            broadcastWorld(profile, formatMessage(msgResetting, profile, null), evacuatedPlayers);
 
             Bukkit.getScheduler().runTaskLater(this, () -> {
                 if (Bukkit.getWorld(profile.targetWorld) != null) {
@@ -387,8 +409,8 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
                                             Bukkit.getScheduler().runTaskLater(RtpResetTimer.this, () -> {
                                                 try {
                                                     applyWorldSettings(loadedWorld, profile);
-                                                    broadcast(formatMessage(msgResetSuccess, profile, null));
-                                                    broadcast(formatMessage(msgNextReset, profile, formatDuration(profile.resetIntervalSeconds)));
+                                                    broadcastWorld(profile, formatMessage(msgResetSuccess, profile, null), evacuatedPlayers);
+                                                    broadcastWorld(profile, formatMessage(msgNextReset, profile, formatDuration(profile.resetIntervalSeconds)), evacuatedPlayers);
                                                 } finally {
                                                     profile.remainingSeconds = profile.resetIntervalSeconds;
                                                     profile.isResetting = false;
