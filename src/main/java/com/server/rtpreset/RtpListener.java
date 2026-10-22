@@ -1,9 +1,11 @@
 package com.server.rtpreset;
 
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -61,6 +63,20 @@ public class RtpListener implements Listener {
             if (plugin.getArenaManager().isBetweenRounds(player.getUniqueId())) {
                 event.setCancelled(true);
             }
+        }
+    }
+
+    @EventHandler
+    public void onEntityDamageByEntity(EntityDamageByEntityEvent event) {
+        if (!(event.getEntity() instanceof Player victim)) return;
+        Player attacker = null;
+        if (event.getDamager() instanceof Player p) {
+            attacker = p;
+        } else if (event.getDamager() instanceof Projectile proj && proj.getShooter() instanceof Player p) {
+            attacker = p;
+        }
+        if (attacker != null && plugin.getArenaManager().isFriendlyFire(attacker.getUniqueId(), victim.getUniqueId())) {
+            event.setCancelled(true);
         }
     }
 
