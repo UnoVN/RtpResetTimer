@@ -67,24 +67,36 @@ public class ArenaManager {
     public static class ArenaMatch {
         public final Arena arena;
         public final RtpManager.RtpItem item;
-        public final UUID p1;
-        public final UUID p2;
+        public final List<UUID> team1;
+        public final List<UUID> team2;
+        public final Set<UUID> deadInRound = ConcurrentHashMap.newKeySet();
         public final int winsRequired;
         public int currentRound = 1;
         public int p1Wins = 0;
         public int p2Wins = 0;
         public boolean processingRoundEnd = false;
 
-        public ArenaMatch(Arena arena, RtpManager.RtpItem item, UUID p1, UUID p2, int winsRequired) {
+        public ArenaMatch(Arena arena, RtpManager.RtpItem item, List<UUID> team1, List<UUID> team2, int winsRequired) {
             this.arena = arena;
             this.item = item;
-            this.p1 = p1;
-            this.p2 = p2;
+            this.team1 = new ArrayList<>(team1);
+            this.team2 = new ArrayList<>(team2);
             this.winsRequired = winsRequired;
         }
 
+        public List<UUID> getAllPlayers() {
+            List<UUID> all = new ArrayList<>(team1.size() + team2.size());
+            all.addAll(team1);
+            all.addAll(team2);
+            return all;
+        }
+
+        public boolean isTeam1(UUID uuid) {
+            return team1.contains(uuid);
+        }
+
         public Location getSpawn(UUID uuid) {
-            return uuid.equals(p1) ? arena.spawn1.toLocation() : arena.spawn2.toLocation();
+            return isTeam1(uuid) ? arena.spawn1.toLocation() : arena.spawn2.toLocation();
         }
     }
 
@@ -115,7 +127,6 @@ public class ArenaManager {
         this.dbFile = new File(plugin.getDataFolder(), "arenas.db");
         this.localBackupYml = new File(plugin.getDataFolder(), "arenas.yml");
 
-        // Thư mục lưu trữ độc lập ngoài RtpResetTimer để không bao giờ mất khi xóa folder plugin
         File extFolder = new File(plugin.getDataFolder().getParentFile(), "RtpArenaData");
         if (!extFolder.exists()) extFolder.mkdirs();
         this.externalBackupYml = new File(extFolder, "arenas_backup.yml");
@@ -170,7 +181,6 @@ public class ArenaManager {
             plugin.getLogger().severe("Failed to load arenas.db: " + e.getMessage());
         }
 
-        // Nếu DB trống (do vừa xóa folder plugin), tự động khôi phục từ bản backup độc lập
         if (arenas.isEmpty()) {
             if (localBackupYml.exists()) loadFromYamlFile(localBackupYml, inUseSet);
             if (arenas.isEmpty() && externalBackupYml.exists()) loadFromYamlFile(externalBackupYml, inUseSet);
@@ -268,13 +278,8 @@ public class ArenaManager {
         syncYamlBackups();
     }
 
-    public Collection<Arena> getAllArenas() {
-        return arenas.values();
-    }
-
-    public Arena getArena(String name) {
-        return name != null ? arenas.get(name) : null;
-    }
+    public Collection<Arena> getAllArenas() { return arenas.values(); }
+    public Arena getArena(String name) { return name != null ? arenas.get(name) : null; }
 
     public void shutdown() {
         Location lobby = plugin.getLobbyLocation();
@@ -297,7 +302,16 @@ public class ArenaManager {
 
     public boolean isBetweenRounds(UUID uuid) {
         ArenaMatch m = activeMatches.get(uuid);
-        return m != null && m.processingRoundEnd;
+        return m != null && (m.processingRoundEnd || m.deadInRound.contains(uuid));
+    }
+
+    public boolean isFriendlyFire(UUID attacker, UUID victim) {
+        if (plugin.getConfig().getBoolean("arena-settings.friendly-fire", false)) return false;
+        ArenaMatch m = activeMatches.get(attacker);
+        if (m == null || m != activeMatches.get(victim)) return false;
+        if (attacker.equals(victim)) return false;
+        return (m.team1.contains(attacker) && m.team1.contains(victim))
+                || (m.team2.contains(attacker) && m.team2.contains(victim));
     }
 
     public synchronized Arena reserveAvailableArena() {
@@ -336,32 +350,63 @@ public class ArenaManager {
     }
 
     public void startArenaMatch(Player p1, Player p2, Arena arena, RtpManager.RtpItem item, int customWins) {
+        startArenaMatch(Collections.singletonList(p1), Collections.singletonList(p2), arena, item, customWins);
+    }
+
+    public void startArenaMatch(List<Player> t1Players, List<Player> t2Players, Arena arena, RtpManager.RtpItem item, int customWins) {
         int defaultWins = Math.max(1, plugin.getConfig().getInt("arena-settings.first-to-wins", 3));
         int winsReq = customWins > 0 ? customWins : defaultWins;
 
-        ArenaMatch match = new ArenaMatch(arena, item, p1.getUniqueId(), p2.getUniqueId(), winsReq);
-        activeMatches.put(p1.getUniqueId(), match);
-        activeMatches.put(p2.getUniqueId(), match);
+        List<UUID> t1Uuids = new ArrayList<>();
+        List<UUID> t2Uuids = new ArrayList<>();
+        for (Player p : t1Players) t1Uuids.add(p.getUniqueId());
+        for (Player p : t2Players) t2Uuids.add(p.getUniqueId());
 
-        p1.setGameMode(GameMode.SURVIVAL);
-        p2.setGameMode(GameMode.SURVIVAL);
+        ArenaMatch match = new ArenaMatch(arena, item, t1Uuids, t2Uuids, winsReq);
+        for (UUID u : match.getAllPlayers()) activeMatches.put(u, match);
 
         Location loc1 = arena.spawn1.toLocation();
         Location loc2 = arena.spawn2.toLocation();
-        if (loc1 != null) p1.teleport(loc1);
-        if (loc2 != null) p2.teleport(loc2);
-        healPlayer(p1);
-        healPlayer(p2);
 
         Title fTitle = Title.title(
                 plugin.toComponent(plugin.getMsg("rtp-messages.match-started-title", "&#a6e3a1FIGHT!")),
                 plugin.toComponent("&#a6adc8First to &#89b4fa" + winsReq + " &8| &#cdd6f4" + arena.name),
                 Title.Times.times(Duration.ofMillis(200), Duration.ofMillis(1800), Duration.ofMillis(400))
         );
-        p1.showTitle(fTitle);
-        p2.showTitle(fTitle);
-        if (loc1 != null) p1.playSound(loc1, Sound.ENTITY_PLAYER_LEVELUP, 1f, 1f);
-        if (loc2 != null) p2.playSound(loc2, Sound.ENTITY_PLAYER_LEVELUP, 1f, 1f);
+
+        for (Player p1 : t1Players) {
+            p1.setGameMode(GameMode.SURVIVAL);
+            if (loc1 != null) p1.teleport(loc1);
+            healPlayer(p1);
+            p1.showTitle(fTitle);
+            if (loc1 != null) p1.playSound(loc1, Sound.ENTITY_PLAYER_LEVELUP, 1f, 1f);
+        }
+        for (Player p2 : t2Players) {
+            p2.setGameMode(GameMode.SURVIVAL);
+            if (loc2 != null) p2.teleport(loc2);
+            healPlayer(p2);
+            p2.showTitle(fTitle);
+            if (loc2 != null) p2.playSound(loc2, Sound.ENTITY_PLAYER_LEVELUP, 1f, 1f);
+        }
+    }
+
+    private String formatTeamNames(List<UUID> teamUuids, String fallback) {
+        List<String> names = new ArrayList<>();
+        for (UUID u : teamUuids) {
+            Player p = Bukkit.getPlayer(u);
+            if (p != null) names.add(p.getName());
+        }
+        return names.isEmpty() ? fallback : String.join(" & ", names);
+    }
+
+    private boolean isTeamEliminated(List<UUID> teamUuids, Set<UUID> deadSet) {
+        for (UUID u : teamUuids) {
+            Player p = Bukkit.getPlayer(u);
+            if (p != null && p.isOnline() && !deadSet.contains(u)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public boolean forfeitMatch(Player forfeiter) {
@@ -369,27 +414,25 @@ public class ArenaManager {
         ArenaMatch match = activeMatches.get(uuid);
         if (match == null) return false;
 
-        boolean isP1 = uuid.equals(match.p1);
-        if (isP1) match.p2Wins = match.winsRequired;
+        boolean isT1 = match.isTeam1(uuid);
+        if (isT1) match.p2Wins = match.winsRequired;
         else match.p1Wins = match.winsRequired;
 
-        Player p1 = Bukkit.getPlayer(match.p1);
-        Player p2 = Bukkit.getPlayer(match.p2);
-        Player winner = isP1 ? p2 : p1;
-        String winnerName = winner != null ? winner.getName() : "Opponent";
-
+        String winnerName = isT1 ? formatTeamNames(match.team2, "Team 2") : formatTeamNames(match.team1, "Team 1");
         String ffMsg = plugin.getMsg("rtp-messages.arena-forfeit",
                 "{prefix}&#f38ba8{forfeiter} forfeited the match! &#a6e3a1{winner} wins!")
                 .replace("{forfeiter}", forfeiter.getName())
                 .replace("{winner}", winnerName);
-        if (p1 != null) p1.sendMessage(plugin.toComponent(ffMsg));
-        if (p2 != null) p2.sendMessage(plugin.toComponent(ffMsg));
+
+        for (UUID u : match.getAllPlayers()) {
+            Player p = Bukkit.getPlayer(u);
+            if (p != null) p.sendMessage(plugin.toComponent(ffMsg));
+        }
 
         finishMatch(match);
         return true;
     }
 
-    // AUTO RESPAWN + CHUYỂN SPECTATOR + ĐẾM NGƯỢC 3S SANG HIỆP TIẾP THEO
     public void handlePlayerDeath(PlayerDeathEvent event) {
         Player dead = event.getEntity();
         ArenaMatch match = activeMatches.get(dead.getUniqueId());
@@ -397,8 +440,8 @@ public class ArenaManager {
 
         Location deathLoc = dead.getLocation().clone();
         pendingRespawns.put(dead.getUniqueId(), deathLoc);
+        match.deadInRound.add(dead.getUniqueId());
 
-        // Auto Respawn sau 1 tick để đối thủ không phải chờ
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (dead.isOnline() && dead.isDead()) {
                 dead.spigot().respawn();
@@ -406,18 +449,18 @@ public class ArenaManager {
         }, 1L);
 
         if (match.processingRoundEnd) return;
+
+        boolean t1Wiped = isTeamEliminated(match.team1, match.deadInRound);
+        boolean t2Wiped = isTeamEliminated(match.team2, match.deadInRound);
+        if (!t1Wiped && !t2Wiped) return;
+
         match.processingRoundEnd = true;
+        if (t1Wiped) match.p2Wins++;
+        else match.p1Wins++;
 
-        boolean deadIsP1 = dead.getUniqueId().equals(match.p1);
-        UUID winnerUuid = deadIsP1 ? match.p2 : match.p1;
-        if (deadIsP1) match.p2Wins++; else match.p1Wins++;
-
-        Player p1 = Bukkit.getPlayer(match.p1);
-        Player p2 = Bukkit.getPlayer(match.p2);
-        Player winner = Bukkit.getPlayer(winnerUuid);
-        String winnerName = winner != null ? winner.getName() : "Opponent";
-        String p1Name = p1 != null ? p1.getName() : "P1";
-        String p2Name = p2 != null ? p2.getName() : "P2";
+        String t1Name = formatTeamNames(match.team1, "Team 1");
+        String t2Name = formatTeamNames(match.team2, "Team 2");
+        String winnerName = t1Wiped ? t2Name : t1Name;
 
         int finishedRound = match.currentRound;
         boolean reachedWinTarget = (match.p1Wins >= match.winsRequired || match.p2Wins >= match.winsRequired);
@@ -432,8 +475,10 @@ public class ArenaManager {
                     .replace("{p1_wins}", String.valueOf(match.p1Wins))
                     .replace("{p2_wins}", String.valueOf(match.p2Wins));
 
-            if (p1 != null) p1.sendMessage(plugin.toComponent(roundMsg));
-            if (p2 != null) p2.sendMessage(plugin.toComponent(roundMsg));
+            for (UUID u : match.getAllPlayers()) {
+                Player p = Bukkit.getPlayer(u);
+                if (p != null) p.sendMessage(plugin.toComponent(roundMsg));
+            }
 
             int cdSeconds = Math.max(1, plugin.getConfig().getInt("arena-settings.round-countdown-seconds", 3));
 
@@ -442,13 +487,10 @@ public class ArenaManager {
 
                 @Override
                 public void run() {
-                    if (!activeMatches.containsKey(match.p1)) {
+                    if (match.team1.isEmpty() || !activeMatches.containsKey(match.team1.get(0))) {
                         cancel();
                         return;
                     }
-
-                    Player curP1 = Bukkit.getPlayer(match.p1);
-                    Player curP2 = Bukkit.getPlayer(match.p2);
 
                     if (timer > 0) {
                         if (timer == 1) {
@@ -463,51 +505,57 @@ public class ArenaManager {
                         Title cdTitle = Title.title(tMain, plugin.toComponent(subRaw),
                                 Title.Times.times(Duration.ZERO, Duration.ofMillis(1200), Duration.ofMillis(200)));
 
-                        if (curP1 != null && curP1.isOnline()) {
-                            curP1.showTitle(cdTitle);
-                            curP1.playSound(curP1.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1f, 1.2f);
-                        }
-                        if (curP2 != null && curP2.isOnline()) {
-                            curP2.showTitle(cdTitle);
-                            curP2.playSound(curP2.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1f, 1.2f);
+                        for (UUID u : match.getAllPlayers()) {
+                            Player p = Bukkit.getPlayer(u);
+                            if (p != null && p.isOnline()) {
+                                p.showTitle(cdTitle);
+                                p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1f, 1.2f);
+                            }
                         }
                         timer--;
                     } else {
                         cancel();
+                        match.deadInRound.clear();
                         match.processingRoundEnd = false;
 
                         Location s1 = match.arena.spawn1.toLocation();
                         Location s2 = match.arena.spawn2.toLocation();
 
-                        if (curP1 != null && curP1.isOnline()) {
-                            if (curP1.isDead()) curP1.spigot().respawn();
-                            curP1.setGameMode(GameMode.SURVIVAL);
-                            if (s1 != null) curP1.teleport(s1);
-                            healPlayer(curP1);
+                        for (UUID u : match.team1) {
+                            Player p = Bukkit.getPlayer(u);
+                            if (p != null && p.isOnline()) {
+                                if (p.isDead()) p.spigot().respawn();
+                                p.setGameMode(GameMode.SURVIVAL);
+                                if (s1 != null) p.teleport(s1);
+                                healPlayer(p);
+                            }
                         }
-                        if (curP2 != null && curP2.isOnline()) {
-                            if (curP2.isDead()) curP2.spigot().respawn();
-                            curP2.setGameMode(GameMode.SURVIVAL);
-                            if (s2 != null) curP2.teleport(s2);
-                            healPlayer(curP2);
+                        for (UUID u : match.team2) {
+                            Player p = Bukkit.getPlayer(u);
+                            if (p != null && p.isOnline()) {
+                                if (p.isDead()) p.spigot().respawn();
+                                p.setGameMode(GameMode.SURVIVAL);
+                                if (s2 != null) p.teleport(s2);
+                                healPlayer(p);
+                            }
                         }
 
                         String rTitle = plugin.getMsg("rtp-messages.arena-round-title", "&#89b4faROUND {round}")
                                 .replace("{round}", String.valueOf(match.currentRound));
                         String rSub = plugin.getMsg("rtp-messages.arena-round-subtitle", "&#cdd6f4{p1} &#a6e3a1{p1_wins} &8- &#f38ba8{p2_wins} &#cdd6f4{p2}")
-                                .replace("{p1}", p1Name).replace("{p2}", p2Name)
+                                .replace("{p1}", t1Name).replace("{p2}", t2Name)
                                 .replace("{p1_wins}", String.valueOf(match.p1Wins))
                                 .replace("{p2_wins}", String.valueOf(match.p2Wins));
 
                         Title nextTitle = Title.title(plugin.toComponent(rTitle), plugin.toComponent(rSub),
                                 Title.Times.times(Duration.ofMillis(200), Duration.ofMillis(1500), Duration.ofMillis(300)));
-                        if (curP1 != null && curP1.isOnline()) {
-                            curP1.showTitle(nextTitle);
-                            curP1.playSound(curP1.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1f, 1.2f);
-                        }
-                        if (curP2 != null && curP2.isOnline()) {
-                            curP2.showTitle(nextTitle);
-                            curP2.playSound(curP2.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1f, 1.2f);
+
+                        for (UUID u : match.getAllPlayers()) {
+                            Player p = Bukkit.getPlayer(u);
+                            if (p != null && p.isOnline()) {
+                                p.showTitle(nextTitle);
+                                p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1f, 1.2f);
+                            }
                         }
                     }
                 }
@@ -566,13 +614,12 @@ public class ArenaManager {
     }
 
     private void finishMatch(ArenaMatch match) {
-        activeMatches.remove(match.p1);
-        activeMatches.remove(match.p2);
+        for (UUID u : match.getAllPlayers()) {
+            activeMatches.remove(u);
+        }
 
-        Player p1 = Bukkit.getPlayer(match.p1);
-        Player p2 = Bukkit.getPlayer(match.p2);
-        boolean p1Won = match.p1Wins >= match.p2Wins;
-        String finalWinner = p1Won ? (p1 != null ? p1.getName() : "Player 1") : (p2 != null ? p2.getName() : "Player 2");
+        boolean t1Won = match.p1Wins >= match.p2Wins;
+        String finalWinner = t1Won ? formatTeamNames(match.team1, "Team 1") : formatTeamNames(match.team2, "Team 2");
         int wWins = Math.max(match.p1Wins, match.p2Wins);
         int lWins = Math.min(match.p1Wins, match.p2Wins);
 
@@ -581,23 +628,22 @@ public class ArenaManager {
                     .replace("{w_wins}", String.valueOf(wWins))
                     .replace("{l_wins}", String.valueOf(lWins))
                     .replace("{arena}", match.arena.name);
-            if (p1 != null) p1.sendMessage(plugin.toComponent(msg));
-            if (p2 != null) p2.sendMessage(plugin.toComponent(msg));
+            for (UUID u : match.getAllPlayers()) {
+                Player p = Bukkit.getPlayer(u);
+                if (p != null) p.sendMessage(plugin.toComponent(msg));
+            }
         }
 
         Location lobby = plugin.getLobbyLocation();
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            if (p1 != null && p1.isOnline()) {
-                if (p1.isDead()) p1.spigot().respawn();
-                p1.setGameMode(GameMode.SURVIVAL);
-                if (lobby != null) p1.teleport(lobby);
-                healPlayer(p1);
-            }
-            if (p2 != null && p2.isOnline()) {
-                if (p2.isDead()) p2.spigot().respawn();
-                p2.setGameMode(GameMode.SURVIVAL);
-                if (lobby != null) p2.teleport(lobby);
-                healPlayer(p2);
+            for (UUID u : match.getAllPlayers()) {
+                Player p = Bukkit.getPlayer(u);
+                if (p != null && p.isOnline()) {
+                    if (p.isDead()) p.spigot().respawn();
+                    p.setGameMode(GameMode.SURVIVAL);
+                    if (lobby != null) p.teleport(lobby);
+                    healPlayer(p);
+                }
             }
             runArenaRegen(match.arena.name);
             match.arena.inUse = false;
@@ -611,7 +657,6 @@ public class ArenaManager {
         p.setFoodLevel(20);
     }
 
-    // ==================== HỆ THỐNG GUI /SETUP ====================
     public void openSetupListGui(Player admin) {
         Inventory inv = Bukkit.createInventory(new SetupListHolder(), 27, plugin.toComponent("&#cdd6f4&lARENA SETUP"));
         ItemStack glass = createItem(Material.BLACK_STAINED_GLASS_PANE, " ", Collections.emptyList());
