@@ -87,7 +87,7 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         if (getCommand("forfeit") != null) getCommand("forfeit").setExecutor(this);
 
         startTimerLoop();
-        getLogger().info("RtpResetTimer 1.5.0 (SQLite Arena, 1v1/2v2 & EcoCart Edition) enabled!");
+        getLogger().info("RtpResetTimer 1.5.0 (1v1/2v2 & EcoCart Edition) enabled!");
     }
 
     @Override
@@ -97,13 +97,8 @@ public final class RtpResetTimer extends JavaPlugin implements CommandExecutor {
         if (arenaManager != null) arenaManager.shutdown();
     }
 
-    public RtpManager getRtpManager() {
-        return rtpManager;
-    }
-
-    public ArenaManager getArenaManager() {
-        return arenaManager;
-    }
+    public RtpManager getRtpManager() { return rtpManager; }
+    public ArenaManager getArenaManager() { return arenaManager; }
 
     public Location getLobbyLocation() {
         World w = Bukkit.getWorld(lobbyWorldName);
