@@ -15,6 +15,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.util.Vector;
 import org.jetbrains.annotations.NotNull;
 
 import java.time.Duration;
@@ -36,9 +37,11 @@ public class RtpManager {
     }
 
     public static class QueueGuiHolder implements InventoryHolder {
+        public final boolean teamMode;
         public final Set<String> selectedModes = new LinkedHashSet<>();
 
-        public QueueGuiHolder(Collection<String> initialModes) {
+        public QueueGuiHolder(boolean teamMode, Collection<String> initialModes) {
+            this.teamMode = teamMode;
             if (initialModes != null) this.selectedModes.addAll(initialModes);
         }
 
@@ -68,7 +71,9 @@ public class RtpManager {
     private final RtpResetTimer plugin;
     private final Map<String, RtpItem> rtpItems = new LinkedHashMap<>();
     private final Map<String, RtpItem> rtpqItems = new LinkedHashMap<>();
-    private final Map<String, List<UUID>> queueMap = new ConcurrentHashMap<>();
+    private final Map<String, List<UUID>> queueMap1v1 = new ConcurrentHashMap<>();
+    private final Map<String, List<UUID>> queueMap2v2 = new ConcurrentHashMap<>();
+    private final Map<UUID, Boolean> playerQueueTeam = new ConcurrentHashMap<>();
     private final Map<UUID, Long> queueJoinTime = new ConcurrentHashMap<>();
     private final Map<UUID, Map<UUID, DuelRequest>> duelRequests = new ConcurrentHashMap<>();
     private final Set<UUID> inCountdown = ConcurrentHashMap.newKeySet();
@@ -84,7 +89,9 @@ public class RtpManager {
             queueMonitorTask.cancel();
             queueMonitorTask = null;
         }
-        queueMap.clear();
+        queueMap1v1.clear();
+        queueMap2v2.clear();
+        playerQueueTeam.clear();
         queueJoinTime.clear();
         duelRequests.clear();
         inCountdown.clear();
@@ -109,7 +116,8 @@ public class RtpManager {
                 ConfigurationSection sub = rtpqSec.getConfigurationSection(key);
                 if (sub != null) {
                     rtpqItems.put(key, parseItem(sub, key));
-                    queueMap.put(key, new ArrayList<>());
+                    queueMap1v1.put(key, new ArrayList<>());
+                    queueMap2v2.put(key, new ArrayList<>());
                 }
             }
         }
@@ -129,32 +137,51 @@ public class RtpManager {
         item.mapDisplay = sec.getString("map-display", "RTP Desert");
         item.lore = sec.getStringList("lore");
         item.worldName = sec.getString("world", "rtpdesert");
-        item.minX = sec.getInt("min-x", 0);
-        item.maxX = sec.getInt("max-x", 100);
-        item.minZ = sec.getInt("min-z", 0);
-        item.maxZ = sec.getInt("max-z", 100);
+        item.minX = sec.getInt("min-x", 50);
+        item.maxX = sec.getInt("max-x", 790);
+        item.minZ = sec.getInt("min-z", -820);
+        item.maxZ = sec.getInt("max-z", -80);
         return item;
     }
 
-    private Set<String> getPlayerQueuedModes(UUID uuid) {
+    private Map<String, List<UUID>> getQueueMap(boolean teamMode) {
+        return teamMode ? queueMap2v2 : queueMap1v1;
+    }
+
+    private Set<String> getPlayerQueuedModes(UUID uuid, boolean teamMode) {
         Set<String> modes = new LinkedHashSet<>();
-        for (Map.Entry<String, List<UUID>> entry : queueMap.entrySet()) {
+        for (Map.Entry<String, List<UUID>> entry : getQueueMap(teamMode).entrySet()) {
             if (entry.getValue().contains(uuid)) modes.add(entry.getKey());
         }
         return modes;
     }
 
-    private String formatModeList(Collection<String> keys, boolean includeCount) {
+    private Set<String> getAnyPlayerQueuedModes(UUID uuid) {
+        boolean team = playerQueueTeam.getOrDefault(uuid, false);
+        Set<String> m = getPlayerQueuedModes(uuid, team);
+        if (!m.isEmpty()) return m;
+        return getPlayerQueuedModes(uuid, !team);
+    }
+
+    private void clearPlayerFromQueueMaps(UUID uuid) {
+        for (List<UUID> list : queueMap1v1.values()) list.remove(uuid);
+        for (List<UUID> list : queueMap2v2.values()) list.remove(uuid);
+        playerQueueTeam.remove(uuid);
+    }
+
+    private String formatModeList(Collection<String> keys, boolean includeCount, boolean teamMode) {
         if (keys == null || keys.isEmpty()) {
             return plugin.getConfig().getString("rtpq-menu.none-selected", "&#f38ba8None");
         }
+        int maxQ = teamMode ? 4 : 2;
+        Map<String, List<UUID>> qMap = getQueueMap(teamMode);
         List<String> parts = new ArrayList<>();
         for (String key : keys) {
             RtpItem item = rtpqItems.get(key);
             if (item == null) continue;
             if (includeCount) {
-                int size = queueMap.getOrDefault(key, Collections.emptyList()).size();
-                parts.add(item.icon + " &#cdd6f4" + item.modeDisplay + " &#a6adc8(&#89b4fa" + size + "/2&#a6adc8)");
+                int size = qMap.getOrDefault(key, Collections.emptyList()).size();
+                parts.add(item.icon + " &#cdd6f4" + item.modeDisplay + " &#a6adc8(&#89b4fa" + size + "/" + maxQ + "&#a6adc8)");
             } else {
                 parts.add(item.icon + " &#cdd6f4" + item.modeDisplay);
             }
@@ -172,31 +199,35 @@ public class RtpManager {
 
                 for (UUID uuid : new HashSet<>(queueJoinTime.keySet())) {
                     Player p = Bukkit.getPlayer(uuid);
-                    Set<String> activeModes = getPlayerQueuedModes(uuid);
+                    boolean teamMode = playerQueueTeam.getOrDefault(uuid, false);
+                    Set<String> activeModes = getPlayerQueuedModes(uuid, teamMode);
                     if (p == null || !p.isOnline() || activeModes.isEmpty()) {
-                        for (List<UUID> list : queueMap.values()) list.remove(uuid);
+                        clearPlayerFromQueueMaps(uuid);
                         queueJoinTime.remove(uuid);
                         continue;
                     }
 
                     int elapsedSec = (int) ((now - queueJoinTime.getOrDefault(uuid, now)) / 1000L);
-                    String modesStr = formatModeList(activeModes, false);
+                    String modesStr = formatModeList(activeModes, false, teamMode);
+                    String qType = teamMode ? "2v2" : "1v1";
 
                     if (timeoutEnabled && elapsedSec >= maxTimeoutSec) {
-                        for (List<UUID> list : queueMap.values()) list.remove(uuid);
+                        clearPlayerFromQueueMaps(uuid);
                         queueJoinTime.remove(uuid);
                         String tf = String.format("%02d:%02d", maxTimeoutSec / 60, maxTimeoutSec % 60);
                         p.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.queue-timeout", "{prefix}&#f38ba8Queue timed out ({timeout}).")
-                                .replace("{modes}", modesStr).replace("{timeout}", tf)));
+                                .replace("{modes}", modesStr).replace("{timeout}", tf).replace("{queue_type}", qType)));
                         p.sendActionBar(plugin.toComponent(plugin.getMsg("rtp-messages.queue-timeout-actionbar", "&#f38ba8Queue timed out")
-                                .replace("{modes}", modesStr)));
+                                .replace("{modes}", modesStr).replace("{queue_type}", qType)));
                         p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 0.8f);
                         continue;
                     }
 
                     String elapsedStr = String.format("%02d:%02d", elapsedSec / 60, elapsedSec % 60);
                     String ab = plugin.getMsg("rtp-messages.queue-waiting-actionbar", "&#a6adc8Queue: {modes} &8| &#a6adc8Time: &#cdd6f4{elapsed}")
-                            .replace("{modes}", modesStr).replace("{elapsed}", elapsedStr);
+                            .replace("{queue_type}", qType)
+                            .replace("{modes}", modesStr)
+                            .replace("{elapsed}", elapsedStr);
                     p.sendActionBar(plugin.toComponent(ab));
                 }
             }
@@ -268,11 +299,12 @@ public class RtpManager {
     }
 
     public void openRtpQueueGui(Player player) {
-        openRtpQueueGui(player, null);
+        boolean teamMode = playerQueueTeam.getOrDefault(player.getUniqueId(), false);
+        openRtpQueueGui(player, teamMode, null);
     }
 
-    public void openRtpQueueGui(Player player, Set<String> customSelected) {
-        Set<String> activeQueues = getPlayerQueuedModes(player.getUniqueId());
+    public void openRtpQueueGui(Player player, boolean teamMode, Set<String> customSelected) {
+        Set<String> activeQueues = getPlayerQueuedModes(player.getUniqueId(), teamMode);
         Set<String> selected;
         if (customSelected != null) {
             selected = new LinkedHashSet<>(customSelected);
@@ -282,12 +314,54 @@ public class RtpManager {
             selected = new LinkedHashSet<>();
         }
 
-        Component title = plugin.toComponent(plugin.getConfig().getString("rtpq-menu.title", "&#cdd6f4&l1V1 BATTLE QUEUE"));
+        String qType = teamMode ? "2V2" : "1V1";
+        int maxQueue = teamMode ? 4 : 2;
+        Map<String, List<UUID>> currentQMap = getQueueMap(teamMode);
+
+        Component title = plugin.toComponent(plugin.getConfig().getString("rtpq-menu.title", "&#cdd6f4&l{queue_type} BATTLE QUEUE")
+                .replace("{queue_type}", qType));
         int size = plugin.getConfig().getInt("rtpq-menu.size", 27);
-        Inventory inv = Bukkit.createInventory(new QueueGuiHolder(selected), size, title);
+        Inventory inv = Bukkit.createInventory(new QueueGuiHolder(teamMode, selected), size, title);
         applyFiller(inv, "rtpq-menu");
 
-        String modesSummary = formatModeList(selected, false);
+        String typeActive = plugin.getConfig().getString("rtpq-menu.type-status-active", "&#a6e3a1✔ Currently Viewing");
+        String typeInactive = plugin.getConfig().getString("rtpq-menu.type-status-inactive", "<glyph:left_click> &#a6adc8Click to switch");
+
+        int soloSlot = plugin.getConfig().getInt("rtpq-menu.solo-button.slot", 3);
+        Material soloMat = Material.matchMaterial(plugin.getConfig().getString("rtpq-menu.solo-button.material", "IRON_SWORD").toUpperCase());
+        ItemStack soloBtn = new ItemStack(soloMat != null ? soloMat : Material.IRON_SWORD);
+        ItemMeta soloMeta = soloBtn.getItemMeta();
+        if (soloMeta != null) {
+            soloMeta.displayName(plugin.toComponent(plugin.getConfig().getString("rtpq-menu.solo-button.name", "&#89b4fa&lSOLO QUEUE &8(1v1)")).decoration(TextDecoration.ITALIC, false));
+            soloMeta.setEnchantmentGlintOverride(!teamMode);
+            List<Component> sLore = new ArrayList<>();
+            for (String l : plugin.getConfig().getStringList("rtpq-menu.solo-button.lore")) {
+                sLore.add(plugin.toComponent(l.replace("{type_status}", !teamMode ? typeActive : typeInactive)).decoration(TextDecoration.ITALIC, false));
+            }
+            soloMeta.lore(sLore);
+            soloMeta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
+            soloBtn.setItemMeta(soloMeta);
+        }
+        if (soloSlot >= 0 && soloSlot < size) inv.setItem(soloSlot, soloBtn);
+
+        int teamSlot = plugin.getConfig().getInt("rtpq-menu.team-button.slot", 5);
+        Material teamMat = Material.matchMaterial(plugin.getConfig().getString("rtpq-menu.team-button.material", "DIAMOND_SWORD").toUpperCase());
+        ItemStack teamBtn = new ItemStack(teamMat != null ? teamMat : Material.DIAMOND_SWORD);
+        ItemMeta teamMeta = teamBtn.getItemMeta();
+        if (teamMeta != null) {
+            teamMeta.displayName(plugin.toComponent(plugin.getConfig().getString("rtpq-menu.team-button.name", "&#fab387&lTEAM QUEUE &8(2v2)")).decoration(TextDecoration.ITALIC, false));
+            teamMeta.setEnchantmentGlintOverride(teamMode);
+            List<Component> tLore = new ArrayList<>();
+            for (String l : plugin.getConfig().getStringList("rtpq-menu.team-button.lore")) {
+                tLore.add(plugin.toComponent(l.replace("{type_status}", teamMode ? typeActive : typeInactive)).decoration(TextDecoration.ITALIC, false));
+            }
+            teamMeta.lore(tLore);
+            teamMeta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
+            teamBtn.setItemMeta(teamMeta);
+        }
+        if (teamSlot >= 0 && teamSlot < size) inv.setItem(teamSlot, teamBtn);
+
+        String modesSummary = formatModeList(selected, false, teamMode);
         String stSel = plugin.getConfig().getString("rtpq-menu.status-selected", "&#a6e3a1✔ Selected");
         String stUnsel = plugin.getConfig().getString("rtpq-menu.status-unselected", "<glyph:left_click> &#a6adc8Click to select");
 
@@ -298,13 +372,16 @@ public class RtpManager {
                 boolean isSel = selected.contains(item.key);
                 meta.displayName(plugin.toComponent(applyPlaceholders(item.name, item)).decoration(TextDecoration.ITALIC, false));
                 meta.setEnchantmentGlintOverride(isSel);
-                List<UUID> q = queueMap.getOrDefault(item.key, Collections.emptyList());
+                List<UUID> q = currentQMap.getOrDefault(item.key, Collections.emptyList());
                 String statusText = isSel ? stSel : stUnsel;
 
                 List<Component> lore = new ArrayList<>();
                 for (String l : item.lore) {
                     String line = applyPlaceholders(l, item)
+                            .replace("{current_queue}/2", "{current_queue}/{max_queue}")
                             .replace("{current_queue}", String.valueOf(q.size()))
+                            .replace("{max_queue}", String.valueOf(maxQueue))
+                            .replace("{queue_type}", teamMode ? "2v2" : "1v1")
                             .replace("{queue_status}", statusText)
                             .replace("{click_action}", statusText);
                     lore.add(plugin.toComponent(line).decoration(TextDecoration.ITALIC, false));
@@ -323,12 +400,14 @@ public class RtpManager {
         ItemStack btn = new ItemStack(btnMat != null ? btnMat : (showLeave ? Material.RED_CONCRETE : Material.LIME_CONCRETE));
         ItemMeta btnMeta = btn.getItemMeta();
         if (btnMeta != null) {
+            String summaryText = showLeave ? formatModeList(activeQueues, false, teamMode) : modesSummary;
             String bName = plugin.getConfig().getString(btnPath + ".name", showLeave ? "&#f38ba8&lLEAVE QUEUE" : "&#a6e3a1&lCONFIRM QUEUE")
-                    .replace("{selected_modes}", showLeave ? formatModeList(activeQueues, false) : modesSummary);
+                    .replace("{selected_modes}", summaryText)
+                    .replace("{queue_type}", teamMode ? "2v2" : "1v1");
             btnMeta.displayName(plugin.toComponent(bName).decoration(TextDecoration.ITALIC, false));
             List<Component> bLore = new ArrayList<>();
             for (String l : plugin.getConfig().getStringList(btnPath + ".lore")) {
-                bLore.add(plugin.toComponent(l.replace("{selected_modes}", showLeave ? formatModeList(activeQueues, false) : modesSummary)).decoration(TextDecoration.ITALIC, false));
+                bLore.add(plugin.toComponent(l.replace("{selected_modes}", summaryText).replace("{queue_type}", teamMode ? "2v2" : "1v1")).decoration(TextDecoration.ITALIC, false));
             }
             btnMeta.lore(bLore);
             btn.setItemMeta(btnMeta);
@@ -339,12 +418,26 @@ public class RtpManager {
     }
 
     public void handleQueueGuiClick(Player player, QueueGuiHolder holder, int slot) {
+        int soloSlot = plugin.getConfig().getInt("rtpq-menu.solo-button.slot", 3);
+        int teamSlot = plugin.getConfig().getInt("rtpq-menu.team-button.slot", 5);
+
+        if (slot == soloSlot && holder.teamMode) {
+            player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1f, 1.2f);
+            openRtpQueueGui(player, false, null);
+            return;
+        }
+        if (slot == teamSlot && !holder.teamMode) {
+            player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1f, 1.2f);
+            openRtpQueueGui(player, true, null);
+            return;
+        }
+
         for (RtpItem item : rtpqItems.values()) {
             if (item.slot == slot) {
                 if (holder.selectedModes.contains(item.key)) holder.selectedModes.remove(item.key);
                 else holder.selectedModes.add(item.key);
                 player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1f, 1.2f);
-                openRtpQueueGui(player, holder.selectedModes);
+                openRtpQueueGui(player, holder.teamMode, holder.selectedModes);
                 return;
             }
         }
@@ -352,15 +445,15 @@ public class RtpManager {
         int confirmSlot = plugin.getConfig().getInt("rtpq-menu.confirm-button.slot", 22);
         int leaveSlot = plugin.getConfig().getInt("rtpq-menu.leave-button.slot", 22);
         if (slot == confirmSlot || slot == leaveSlot) {
-            confirmQueueSelection(player, holder.selectedModes);
+            confirmQueueSelection(player, holder.teamMode, holder.selectedModes);
         }
     }
 
-    private void confirmQueueSelection(Player player, Set<String> selectedModes) {
+    private void confirmQueueSelection(Player player, boolean teamMode, Set<String> selectedModes) {
         UUID uuid = player.getUniqueId();
         if (inCountdown.contains(uuid) || plugin.getArenaManager().isInMatch(uuid)) return;
 
-        Set<String> activeQueues = getPlayerQueuedModes(uuid);
+        Set<String> activeQueues = getPlayerQueuedModes(uuid, teamMode);
         if (!activeQueues.isEmpty() && (selectedModes.isEmpty() || selectedModes.equals(activeQueues))) {
             player.closeInventory();
             leaveQueueCommand(player);
@@ -374,33 +467,40 @@ public class RtpManager {
         }
 
         player.closeInventory();
-        for (List<UUID> list : queueMap.values()) list.remove(uuid);
+        clearPlayerFromQueueMaps(uuid);
 
+        int requiredPlayers = teamMode ? 4 : 2;
+        Map<String, List<UUID>> targetQMap = getQueueMap(teamMode);
         List<RtpItem> matchedCandidates = new ArrayList<>();
-        Map<String, Player> opponentByMode = new HashMap<>();
+        Map<String, List<Player>> matchedPlayersByMode = new HashMap<>();
 
         for (String key : selectedModes) {
             RtpItem item = rtpqItems.get(key);
-            List<UUID> q = queueMap.get(key);
+            List<UUID> q = targetQMap.get(key);
             if (item == null || q == null) continue;
 
             q.removeIf(u -> {
                 Player p = Bukkit.getPlayer(u);
-                return p == null || !p.isOnline();
+                return p == null || !p.isOnline() || inCountdown.contains(u) || plugin.getArenaManager().isInMatch(u);
             });
 
             if (!q.contains(uuid)) q.add(uuid);
 
-            if (q.size() >= 2) {
-                for (UUID otherUuid : q) {
-                    if (!otherUuid.equals(uuid)) {
-                        Player other = Bukkit.getPlayer(otherUuid);
+            if (q.size() >= requiredPlayers) {
+                List<Player> found = new ArrayList<>();
+                for (UUID u : q) {
+                    if (!u.equals(uuid)) {
+                        Player other = Bukkit.getPlayer(u);
                         if (other != null && other.isOnline()) {
-                            matchedCandidates.add(item);
-                            opponentByMode.put(key, other);
-                            break;
+                            found.add(other);
+                            if (found.size() == requiredPlayers - 1) break;
                         }
                     }
+                }
+                found.add(player);
+                if (found.size() == requiredPlayers) {
+                    matchedCandidates.add(item);
+                    matchedPlayersByMode.put(key, found);
                 }
             }
         }
@@ -408,8 +508,8 @@ public class RtpManager {
         if (!matchedCandidates.isEmpty()) {
             Collections.shuffle(matchedCandidates);
             for (RtpItem chosenItem : matchedCandidates) {
-                Player opponent = opponentByMode.get(chosenItem.key);
-                if (opponent == null) continue;
+                List<Player> participants = matchedPlayersByMode.get(chosenItem.key);
+                if (participants == null || participants.size() < requiredPlayers) continue;
 
                 ArenaManager.Arena reservedArena = null;
                 if (chosenItem.isArenaMode()) {
@@ -417,33 +517,41 @@ public class RtpManager {
                     if (reservedArena == null) {
                         Component noArena = plugin.toComponent(plugin.getMsg("rtp-messages.no-arena-available",
                                 "{prefix}&#f38ba8No Boxcart arena is currently available!"));
-                        player.sendMessage(noArena);
-                        opponent.sendMessage(noArena);
+                        for (Player mp : participants) mp.sendMessage(noArena);
                         continue;
                     }
                 }
 
-                for (List<UUID> list : queueMap.values()) {
-                    list.remove(uuid);
-                    list.remove(opponent.getUniqueId());
+                for (Player mp : participants) {
+                    clearPlayerFromQueueMaps(mp.getUniqueId());
+                    queueJoinTime.remove(mp.getUniqueId());
                 }
-                queueJoinTime.remove(uuid);
-                queueJoinTime.remove(opponent.getUniqueId());
+
+                List<Player> team1 = teamMode
+                        ? Arrays.asList(participants.get(0), participants.get(1))
+                        : Collections.singletonList(participants.get(0));
+                List<Player> team2 = teamMode
+                        ? Arrays.asList(participants.get(2), participants.get(3))
+                        : Collections.singletonList(participants.get(1));
+
                 int defWins = plugin.getConfig().getInt("arena-settings.first-to-wins", 3);
-                startMatchmaking(opponent, player, chosenItem, reservedArena, defWins);
+                startMatchmaking(team1, team2, chosenItem, reservedArena, defWins);
                 return;
             }
         }
 
+        playerQueueTeam.put(uuid, teamMode);
         queueJoinTime.put(uuid, System.currentTimeMillis());
-        String modesWithCount = formatModeList(selectedModes, true);
-        player.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.joined-queue", "{prefix}&#a6adc8Joined queue: {modes}").replace("{modes}", modesWithCount)));
+        String qType = teamMode ? "2v2" : "1v1";
+        String modesWithCount = formatModeList(selectedModes, true, teamMode);
+
+        player.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.joined-queue", "{prefix}&#a6adc8Joined queue: {modes}")
+                .replace("{queue_type}", qType).replace("{modes}", modesWithCount)));
         player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1.2f);
         Bukkit.broadcast(plugin.toComponent(plugin.getMsg("rtp-messages.queue-broadcast", "{prefix}&#cdd6f4{player} &#a6adc8is queuing for {modes}")
-                .replace("{player}", player.getName()).replace("{modes}", modesWithCount)));
+                .replace("{player}", player.getName()).replace("{queue_type}", qType).replace("{modes}", modesWithCount)));
     }
 
-    // ==================== MENU DUEL: KHÔNG AUTO-SELECT, CHỌN WINS & CHỌN MAP ====================
     public void openDuelGui(Player sender, Player target, String modeKey, int customWins, String selectedArenaName) {
         if (rtpqItems.isEmpty()) return;
         int defWins = Math.max(1, plugin.getConfig().getInt("arena-settings.first-to-wins", 3));
@@ -451,7 +559,6 @@ public class RtpManager {
 
         RtpItem selectedItem = modeKey != null ? rtpqItems.get(modeKey) : null;
 
-        // Nếu Arena đã chọn bị người khác vào chơi, tự động chuyển về Random Available
         if (selectedArenaName != null) {
             ArenaManager.Arena check = plugin.getArenaManager().getArena(selectedArenaName);
             if (check == null || check.inUse || !check.isReadyForMatch()) {
@@ -466,7 +573,6 @@ public class RtpManager {
                 size, plugin.toComponent(rawTitle));
         applyFiller(inv, "duel-menu");
 
-        // 1. Đầu đối thủ (Slot 4)
         int headSlot = plugin.getConfig().getInt("duel-menu.target-head.slot", 4);
         ItemStack head = new ItemStack(Material.PLAYER_HEAD);
         SkullMeta skullMeta = (SkullMeta) head.getItemMeta();
@@ -484,7 +590,6 @@ public class RtpManager {
         }
         if (headSlot >= 0 && headSlot < size) inv.setItem(headSlot, head);
 
-        // 2. Các chế độ (Không auto-select lúc mới mở)
         String statusSel = plugin.getConfig().getString("duel-menu.status-selected", "&#a6e3a1✔ Selected");
         String statusUnsel = plugin.getConfig().getString("duel-menu.status-unselected", "<glyph:left_click> &#a6adc8Click to select");
         List<String> modeLoreCfg = plugin.getConfig().getStringList("duel-menu.mode-lore");
@@ -509,7 +614,6 @@ public class RtpManager {
             if (item.slot >= 0 && item.slot < size) inv.setItem(item.slot, is);
         }
 
-        // 3. Nếu đang chọn chế độ Boxcart (ARENA) -> Hiện nút Chỉnh số Win (Slot 20) & Chọn Map (Slot 24)
         if (selectedItem != null && selectedItem.isArenaMode()) {
             int rSlot = plugin.getConfig().getInt("duel-menu.rounds-button.slot", 20);
             Material rMat = Material.matchMaterial(plugin.getConfig().getString("duel-menu.rounds-button.material", "CLOCK").toUpperCase());
@@ -560,7 +664,6 @@ public class RtpManager {
             if (mSlot >= 0 && mSlot < size) inv.setItem(mSlot, mBtn);
         }
 
-        // 4. Nút Gửi lời mời Duel (Slot 22)
         int sendSlot = plugin.getConfig().getInt("duel-menu.send-button.slot", 22);
         Material sendMat = Material.matchMaterial(plugin.getConfig().getString("duel-menu.send-button.material", "LIME_CONCRETE").toUpperCase());
         ItemStack sendBtn = new ItemStack(sendMat != null ? sendMat : Material.LIME_CONCRETE);
@@ -616,7 +719,7 @@ public class RtpManager {
 
             if (slot == mSlot) {
                 List<String> availableNames = new ArrayList<>();
-                availableNames.add(null); // null = Random Available
+                availableNames.add(null);
                 for (ArenaManager.Arena a : plugin.getArenaManager().getAllArenas()) {
                     if (!a.inUse && a.isReadyForMatch()) {
                         availableNames.add(a.name);
@@ -677,7 +780,6 @@ public class RtpManager {
             return;
         }
         int defWins = plugin.getConfig().getInt("arena-settings.first-to-wins", 3);
-        // Mở GUI Duel với modeKey = null (Không tự động chọn HT KIT)
         openDuelGui(player, target, null, defWins, null);
     }
 
@@ -749,10 +851,8 @@ public class RtpManager {
             }
         }
 
-        for (List<UUID> list : queueMap.values()) {
-            list.remove(sender.getUniqueId());
-            list.remove(target.getUniqueId());
-        }
+        clearPlayerFromQueueMaps(sender.getUniqueId());
+        clearPlayerFromQueueMaps(target.getUniqueId());
         queueJoinTime.remove(sender.getUniqueId());
         queueJoinTime.remove(target.getUniqueId());
 
@@ -761,7 +861,7 @@ public class RtpManager {
         sender.sendMessage(plugin.toComponent(applyDuelPlaceholders(plugin.getMsg("rtp-messages.duel-accepted-sender", "{prefix}&#a6e3a1Duel accepted!"),
                 sender, target, item, req.customWins(), req.arenaName())));
 
-        startMatchmaking(sender, target, item, reservedArena, req.customWins());
+        startMatchmaking(Collections.singletonList(sender), Collections.singletonList(target), item, reservedArena, req.customWins());
     }
 
     public void handleRtpClick(Player player, int slot) {
@@ -776,11 +876,12 @@ public class RtpManager {
 
     public boolean leaveQueueCommand(Player player) {
         UUID uuid = player.getUniqueId();
-        Set<String> activeModes = getPlayerQueuedModes(uuid);
+        boolean teamMode = playerQueueTeam.getOrDefault(uuid, false);
+        Set<String> activeModes = getAnyPlayerQueuedModes(uuid);
         queueJoinTime.remove(uuid);
         if (!activeModes.isEmpty()) {
-            String modesStr = formatModeList(activeModes, false);
-            for (List<UUID> list : queueMap.values()) list.remove(uuid);
+            String modesStr = formatModeList(activeModes, false, teamMode);
+            clearPlayerFromQueueMaps(uuid);
             player.sendMessage(plugin.toComponent(plugin.getMsg("rtp-messages.left-queue", "{prefix}&#a6adc8Left queue: {modes}").replace("{modes}", modesStr)));
             return true;
         }
@@ -789,62 +890,88 @@ public class RtpManager {
     }
 
     public void removePlayerFromAllQueues(UUID uuid) {
-        for (List<UUID> list : queueMap.values()) list.remove(uuid);
+        clearPlayerFromQueueMaps(uuid);
         queueJoinTime.remove(uuid);
         duelRequests.remove(uuid);
         inCountdown.remove(uuid);
     }
 
-    private void startMatchmaking(Player p1, Player p2, RtpItem item, ArenaManager.Arena reservedArena, int customWins) {
-        p1.closeInventory();
-        p2.closeInventory();
-        inCountdown.add(p1.getUniqueId());
-        inCountdown.add(p2.getUniqueId());
+    private String formatTeamNames(List<Player> team) {
+        List<String> names = new ArrayList<>();
+        for (Player p : team) {
+            if (p != null) names.add(p.getName());
+        }
+        return String.join(" & ", names);
+    }
 
+    private void startMatchmaking(List<Player> team1, List<Player> team2, RtpItem item, ArenaManager.Arena reservedArena, int customWins) {
+        List<Player> allPlayers = new ArrayList<>(team1.size() + team2.size());
+        allPlayers.addAll(team1);
+        allPlayers.addAll(team2);
+
+        for (Player p : allPlayers) {
+            p.closeInventory();
+            inCountdown.add(p.getUniqueId());
+        }
+
+        String team1Names = formatTeamNames(team1);
+        String team2Names = formatTeamNames(team2);
+        String qType = (team1.size() > 1 || team2.size() > 1) ? "2V2" : "1V1";
         String mapName = reservedArena != null ? reservedArena.name : item.mapDisplay;
+
         for (String line : plugin.getConfig().getStringList("rtp-messages.match-found-broadcast")) {
             Bukkit.broadcast(plugin.toComponent(applyPlaceholders(line.replace("{map}", mapName), item)
-                    .replace("{player1}", p1.getName()).replace("{player2}", p2.getName())));
+                    .replace("1V1 MATCH", qType + " MATCH")
+                    .replace("{queue_type}", qType)
+                    .replace("{player1}", team1Names)
+                    .replace("{player2}", team2Names)));
         }
 
         int countdown = plugin.getConfig().getInt("rtpq-menu.countdown-seconds", 5);
-        String p1Prefix = getPlayerPrefix(p1), p2Prefix = getPlayerPrefix(p2);
+        String t1Prefix = team1.size() == 1 ? getPlayerPrefix(team1.get(0)) : "";
+        String t2Prefix = team2.size() == 1 ? getPlayerPrefix(team2.get(0)) : "";
 
         new BukkitRunnable() {
             int timer = countdown;
             @Override
             public void run() {
-                if (!p1.isOnline() || !p2.isOnline()) {
-                    inCountdown.remove(p1.getUniqueId());
-                    inCountdown.remove(p2.getUniqueId());
-                    if (reservedArena != null) plugin.getArenaManager().releaseArena(reservedArena);
-                    cancel();
-                    if (p1.isOnline()) p1.sendMessage(plugin.toComponent("<glyph:warning_blue> &#f38ba8Opponent disconnected."));
-                    if (p2.isOnline()) p2.sendMessage(plugin.toComponent("<glyph:warning_blue> &#f38ba8Opponent disconnected."));
-                    return;
+                for (Player p : allPlayers) {
+                    if (p == null || !p.isOnline()) {
+                        for (Player rem : allPlayers) {
+                            if (rem != null) {
+                                inCountdown.remove(rem.getUniqueId());
+                                if (rem.isOnline()) rem.sendMessage(plugin.toComponent("<glyph:warning_blue> &#f38ba8Opponent disconnected."));
+                            }
+                        }
+                        if (reservedArena != null) plugin.getArenaManager().releaseArena(reservedArena);
+                        cancel();
+                        return;
+                    }
                 }
                 if (timer > 0) {
                     Component emojiTitle = getCircleEmoji(timer);
                     Component sub = plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.match-countdown-subtitle", "{icon} &#cdd6f4{mode}"), item));
                     Title titleObj = Title.title(emojiTitle, sub, Title.Times.times(Duration.ZERO, Duration.ofMillis(1250), Duration.ofMillis(250)));
-                    p1.showTitle(titleObj);
-                    p2.showTitle(titleObj);
 
                     String ab = applyPlaceholders(plugin.getMsg("rtp-messages.match-actionbar", "{icon} &#cdd6f4{mode}"), item);
-                    p1.sendActionBar(plugin.toComponent(ab.replace("{opponent_prefix}", p2Prefix).replace("{opponent_name}", p2.getName()).replace("{time}", String.valueOf(timer))));
-                    p2.sendActionBar(plugin.toComponent(ab.replace("{opponent_prefix}", p1Prefix).replace("{opponent_name}", p1.getName()).replace("{time}", String.valueOf(timer))));
-
-                    p1.playSound(p1.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1f, 1.2f);
-                    p2.playSound(p2.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1f, 1.2f);
+                    for (Player p1 : team1) {
+                        p1.showTitle(titleObj);
+                        p1.sendActionBar(plugin.toComponent(ab.replace("{opponent_prefix}", t2Prefix).replace("{opponent_name}", team2Names).replace("{time}", String.valueOf(timer))));
+                        p1.playSound(p1.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1f, 1.2f);
+                    }
+                    for (Player p2 : team2) {
+                        p2.showTitle(titleObj);
+                        p2.sendActionBar(plugin.toComponent(ab.replace("{opponent_prefix}", t1Prefix).replace("{opponent_name}", team1Names).replace("{time}", String.valueOf(timer))));
+                        p2.playSound(p2.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1f, 1.2f);
+                    }
                     timer--;
                 } else {
-                    inCountdown.remove(p1.getUniqueId());
-                    inCountdown.remove(p2.getUniqueId());
+                    for (Player p : allPlayers) inCountdown.remove(p.getUniqueId());
                     cancel();
                     if (reservedArena != null) {
-                        plugin.getArenaManager().startArenaMatch(p1, p2, reservedArena, item, customWins);
+                        plugin.getArenaManager().startArenaMatch(team1, team2, reservedArena, item, customWins);
                     } else {
-                        teleportMatch(p1, p2, item);
+                        teleportMatch(team1, team2, item);
                     }
                 }
             }
@@ -864,16 +991,22 @@ public class RtpManager {
         };
     }
 
-    private void teleportMatch(Player p1, Player p2, RtpItem item) {
+    private void teleportMatch(List<Player> team1, List<Player> team2, RtpItem item) {
+        List<Player> allPlayers = new ArrayList<>(team1.size() + team2.size());
+        allPlayers.addAll(team1);
+        allPlayers.addAll(team2);
+
         World world = Bukkit.getWorld(item.worldName);
         if (world == null || plugin.isWorldResetting(item.worldName)) {
             Component msg = plugin.toComponent(plugin.getMsg("rtp-messages.world-resetting", "{prefix}&#f38ba8Map is currently resetting, please wait a moment!"));
-            p1.sendMessage(msg); p2.sendMessage(msg);
+            for (Player p : allPlayers) p.sendMessage(msg);
             return;
         }
 
         int gap = plugin.getConfig().getInt("rtpq-menu.player-gap", 8);
-        Set<UUID> ignored = new HashSet<>(Arrays.asList(p1.getUniqueId(), p2.getUniqueId()));
+        Set<UUID> ignored = new HashSet<>();
+        for (Player p : allPlayers) ignored.add(p.getUniqueId());
+
         Location loc1 = null, loc2 = null;
         int maxAttempts = plugin.getConfig().getInt("rtp-settings.max-search-attempts", 60);
 
@@ -896,23 +1029,46 @@ public class RtpManager {
 
         if (loc1 == null || loc2 == null) {
             Component err = plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.safe-loc-not-found", "&#f38ba8Could not find safe location."), item));
-            p1.sendMessage(err); p2.sendMessage(err);
+            for (Player p : allPlayers) p.sendMessage(err);
             return;
         }
 
-        loc1.setDirection(loc2.toVector().subtract(loc1.toVector()).normalize());
-        loc2.setDirection(loc1.toVector().subtract(loc2.toVector()).normalize());
-        p1.teleport(loc1);
-        p2.teleport(loc2);
+        Vector dir1to2 = loc2.toVector().subtract(loc1.toVector()).normalize();
+        Vector dir2to1 = loc1.toVector().subtract(loc2.toVector()).normalize();
+        loc1.setDirection(dir1to2);
+        loc2.setDirection(dir2to1);
+
+        Vector perp = new Vector(-dir1to2.getZ(), 0, dir1to2.getX()).normalize();
+
+        for (int i = 0; i < team1.size(); i++) {
+            Location tLoc = loc1.clone();
+            if (team1.size() > 1) {
+                tLoc.add(perp.clone().multiply(i == 0 ? -1.0 : 1.0));
+                int sy = getSolidSurfaceY(world, tLoc.getBlockX(), tLoc.getBlockZ());
+                if (sy > world.getMinHeight()) tLoc.setY(sy + 1.0);
+            }
+            team1.get(i).teleport(tLoc);
+        }
+
+        for (int i = 0; i < team2.size(); i++) {
+            Location tLoc = loc2.clone();
+            if (team2.size() > 1) {
+                tLoc.add(perp.clone().multiply(i == 0 ? -1.0 : 1.0));
+                int sy = getSolidSurfaceY(world, tLoc.getBlockX(), tLoc.getBlockZ());
+                if (sy > world.getMinHeight()) tLoc.setY(sy + 1.0);
+            }
+            team2.get(i).teleport(tLoc);
+        }
 
         Title fTitle = Title.title(
                 plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.match-started-title", "&#a6e3a1FIGHT!"), item)),
                 plugin.toComponent(applyPlaceholders(plugin.getMsg("rtp-messages.match-started-subtitle", "&#a6adc8Good luck"), item)),
                 Title.Times.times(Duration.ofMillis(250), Duration.ofMillis(2000), Duration.ofMillis(500))
         );
-        p1.showTitle(fTitle); p2.showTitle(fTitle);
-        p1.playSound(loc1, Sound.ENTITY_PLAYER_LEVELUP, 1f, 1f);
-        p2.playSound(loc2, Sound.ENTITY_PLAYER_LEVELUP, 1f, 1f);
+        for (Player p : allPlayers) {
+            p.showTitle(fTitle);
+            p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1f, 1f);
+        }
     }
 
     private void executeRtp(Player player, RtpItem item) {
